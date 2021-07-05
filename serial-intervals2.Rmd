@@ -1,29 +1,30 @@
 ---
 title: "Meta-analysis of the SARS-CoV-2 serial interval and the impact of parameter uncertainty on the COVID-19 reproduction number"
-output:
-  pdf_document :
-    fig_caption: yes
-knit: (function(inputFile, encoding,...) {
-  options("spo.hidefigures"=FALSE);
-  rmarkdown::render(
-    inputFile,
-    encoding = encoding,
-    output_dir = "~/Dropbox/covid19/serial-interval/", output_file=paste0('serial-intervals-',Sys.Date(),'.pdf'))
-  })
 # output:
-#   word_document :
+#   pdf_document :
 #     fig_caption: yes
-#     fig_width: 7
 # knit: (function(inputFile, encoding,...) {
-#   options("spo.hidefigures"=TRUE);
+#   options("spo.hidefigures"=FALSE);
 #   rmarkdown::render(
 #     inputFile,
 #     encoding = encoding,
-#     output_dir = "~/Dropbox/covid19/serial-interval/", output_file=paste0('serial-intervals-',Sys.Date(),'.docx'))
+#     output_dir = here::here("output"), output_file=paste0('serial-intervals-',Sys.Date(),'.pdf'))
 #   })
+output:
+  word_document :
+    fig_caption: yes
+    fig_width: 7
+knit: (function(inputFile, encoding,...) {
+  options("spo.hidefigures"=TRUE);
+  rmarkdown::render(
+    inputFile,
+    encoding = encoding,
+    output_dir = here::here("output"), output_file=paste0('serial-intervals-',Sys.Date(),'.docx'))
+  })
 header-includes:
  \usepackage{float}
  \floatplacement{figure}{H}
+ `r huxtable::report_latex_dependencies()`
 fig_width: 7
 fig_height: 5
 out.width: "100%"
@@ -45,19 +46,22 @@ knitr::opts_chunk$set(
   message = FALSE,
   fig.align="center"
 )
+
+here::i_am("serial-intervals2.Rmd")
 ```
 
 ```{r setup}
 library(tidyverse)
-
+source(here::here("common-setup.R"))
 # devtools::load_all("~/Git/uk-covid-datatools/")
 # devtools::install_github("terminological/uk-covid-datatools")
 # library(ukcovidtools)
 # library(rgdal)
-library(ggplot2)
-library(patchwork)
-devtools::load_all("~/Git/standard-print-output/")
-ggplot2::theme_set(standardPrintOutput::defaultFigureLayout())
+# library(ggplot2)
+# library(patchwork)
+# devtools::load_all("~/Git/standard-print-output/")
+# ggplot2::theme_set(standardPrintOutput::defaultFigureLayout())
+# ukcovidtools::setup()
 
 cap = list(
   fig = captioner::captioner(prefix="Figure"),
@@ -73,8 +77,6 @@ ref = list(
   stab = function(name) cap$stab(name,display="cite")
 )
 
-ukcovidtools::setup()
-
 distLabel = function(fit) {
   fit$printDistributionSummary() %>% select(dist,param,mean) %>% pivot_wider(names_from = param, values_from = mean) %>% ungroup() %>% summarise(label = paste0(sprintf("%s: %1.1f (\u00B1%1.1f) days",dist,mean,sd),collapse = "\n"))
 }
@@ -82,11 +84,14 @@ distLabel = function(fit) {
 # This is needed as the code saves some rData files and otherwise this gets into the final output document.
 options("usethis.quiet"=TRUE)
 
+
+
 ```
 
 ```{r}
 
-serialIntervals = readr::read_csv("https://docs.google.com/spreadsheets/d/e/2PACX-1vRdVV2wm6CcqqLAGymOLGrb8JXSe5muEOotE7Emq9GHUXJ1Fu2Euku9d2LhIIK5ZvrnGsinH11ejnUt/pub?gid=0&single=true&output=csv")
+serialIntervals = readxl::read_excel(here::here("input/serial-interval-literature.xlsx"))
+
 
 ## Meta-analysis: ----
 
@@ -104,10 +109,9 @@ metaParams = dpc$getSaved("SERIAL-INTERVAL-META", orElse = function() {
   ) %>% mutate(dist="gamma")
   
   # save the data:
-  usethis::use_data(serialIntervalMetaAnalysis, overwrite = TRUE)
-  return(
-    serialIntervalMetaAnalysis
-  )
+  save(serialIntervalMetaAnalysis, file = here::here("output/serialIntervalMetaAnalysis.rda"), compress = "bzip2", version = 2)
+  # usethis::use_data(serialIntervalMetaAnalysis, overwrite = TRUE)
+  return(serialIntervalMetaAnalysis)
 })
 
 si2 = SerialIntervalProvider$metaAnalysis(dpc, metaDf = metaParams)
@@ -117,9 +121,14 @@ metaSIresult = si2$getSummary() %>% summarise(label = sprintf("mean %1.1f (95%% 
 
 ```{r}
 ## FF100: ----  
+# devtools::load_all("~/Git/uk-covid-datatools/")
+# ukcovidtools::reload()
 
-si3 = SerialIntervalProvider$fromFF100(dpc)
+si3 = SerialIntervalProvider$fromFF100(dpc, dists=c("gamma","norm","lnorm","weibull"))
 
+# si3$dfit$plot(xlim=c(-7,10))#+#guides(fill="none",colour="none")+
+     #standardPrintOutput::cornerAnnotation(label,pos="NW")+standardPrintOutput::narrower()+
+     #xlab("days")
 
 ```
 
@@ -128,6 +137,8 @@ si3 = SerialIntervalProvider$fromFF100(dpc)
 ```{r}
 ## Resampling: ----
 #rm(tmp,tmp2,tmp3)
+
+
 
 resamples = dpc$getSaved("SERIAL-INTERVAL-RESAMPLE", orElse = function() {
 
@@ -188,11 +199,13 @@ resamples = dpc$getSaved("SERIAL-INTERVAL-RESAMPLE", orElse = function() {
   # Or create a set of discretised empirical distributions for epiestim to explore.
   out = sampleDf %>% ungroup() #group_by(N,source)
   serialIntervalResampling = out %>% filter(value > shortestCredibleSI & value <= longestCredibleSI)
-  usethis::use_data(serialIntervalResampling, overwrite = TRUE)
+  save(serialIntervalResampling, file = here::here("output/serialIntervalResampling.rda"), compress = "bzip2", version = 2)
+  # usethis::use_data(serialIntervalResampling, overwrite = TRUE)
   return(out)
 })
 
-si1 = SerialIntervalProvider$resampledSerialInterval(dpc, resamples=resamples)
+
+si1 = SerialIntervalProvider$resampledSerialInterval(dpc, resamples=resamples, dists=c("gamma","norm","lnorm","weibull"))
 resampleSIresult = si1$getSummary() %>% summarise(label = sprintf("mean %1.1f (95%% CrI %1.1f\U2013%1.1f) and SD %1.1f (95%% CrI %1.1f\U2013%1.1f) days",meanOfMean,minOfMean,maxOfMean,meanOfSd,minOfSd,maxOfSd))
 
 ```
@@ -326,7 +339,7 @@ defaultSI = SerialIntervalProvider$default(dpc)
 
 SerialIntervalProvider$printSerialIntervalSources() %>%
   group_by(`Reference`) %>% 
-  standardPrintOutput::saveTable("~/Dropbox/covid19/serial-interval/Table1_serialIntervals", defaultFontSize = 8, colWidths=c(4.5,2,1.5,1.5,1,1,1))
+  standardPrintOutput::saveTable(here::here("output/Table2_serialIntervals"), defaultFontSize = 8, colWidths=c(4.5,2,1.5,1.5,1,1,1))
 
 ```
 
@@ -340,24 +353,35 @@ In `r ref$fig("si-estimates")`, panel A we present the results of the re-sampled
 In `r ref$fig("si-estimates")` panel B we present the distribution of the 50 linked cases in the FF100 data set for which onset dates are available for both infector and infectee. As with the resampled data the parameterised versions of this are based on truncated data for negative binomial and gamma distributions, and hence shows a poorer fit against the whole distribution (full detail of the parameterisation of this is available in `r ref$stab("dfit-serial-interval-ff100")`). Supporting the observations of Xu et al.[@xuHouseholdTransmissionsSARSCoV22020], the FF100 data shows evidence of negative serial intervals. The mean of the serial interval from FF100 data was 3.54 days when parameterised with a gamma distribution and data truncated to exclude negative serial intervals, and 2.09 days when a normal distribution used, with no truncation. This is on the lower end of the values reported in the literature.
 
 
-```{r}
+<!-- ```{r} -->
 
+<!-- devtools::load_all("~/Git/uk-covid-datatools/") -->
+<!-- ukcovidtools::reload() -->
+<!-- si1 = SerialIntervalProvider$resampledSerialInterval(dpc, resamples=resamples, dists=c("gamma","norm","weibull")) -->
+<!-- resampleSIresult = si1$getSummary() %>% summarise(label = sprintf("mean %1.1f (95%% CrI %1.1f\U2013%1.1f) and SD %1.1f (95%% CrI %1.1f\U2013%1.1f) days",meanOfMean,minOfMean,maxOfMean,meanOfSd,minOfSd,maxOfSd)) -->
+
+<!-- si1$dfit$plot(xlim = c(-7,21)) -->
+
+<!-- ``` -->
+
+
+```{r}
 label = distLabel(si3$dfit)
 panel1 = si3$dfit$plot(xlim=c(-7,10))+#guides(fill="none",colour="none")+
      standardPrintOutput::cornerAnnotation(label,pos="NW")+standardPrintOutput::narrower()+
      xlab("days")
 
-label2 = label = distLabel(si1$dfit)
+label2 = distLabel(si1$dfit)
 panel2 = si1$dfit$plot(xlim = c(-7,21))+#guides(fill="none",colour="none")+
      standardPrintOutput::cornerAnnotation(label2)+standardPrintOutput::narrower()+
      xlab("days")
 
 
 fig1 = (panel2|panel1)/patchwork::guide_area() + patchwork::plot_annotation(tag_levels = "A")+plot_layout(heights = c(1,0.1),guides="collect")
-fig1 %>% standardPrintOutput::saveThirdPageFigure("~/Dropbox/covid19/serial-interval/Fig2_SerialIntervalEstimates")
+fig1 %>% standardPrintOutput::saveThirdPageFigure(here::here("output/Fig2_SerialIntervalEstimates"))
 
 
-si1$getBasicConfig(quick = FALSE)$si_sample %>% write.table("~/Git/uk-covid-datatools/vignettes/serial-interval/resampled-truncated-empirical-si-sample.txt")
+si1$getBasicConfig(quick = FALSE)$si_sample %>% write.table(here::here("output/resampled-truncated-empirical-si-sample.txt"))
 ```
 
 `r cap$fig("si-estimates","Panel A - Days between infected infectee disease onset based on a resampling of published estimates from the literature and Panel B - Estimates of serial interval from FF100 data. The histogram in panel A shows the combined density of all sets of samples within the original research.")`
@@ -371,7 +395,9 @@ As noted in the methods, the re-sampling process allows us to estimate the seria
 
 ```{r fig5}
 
-latestDataFile = dpc$datasets$downloadAndUntar(id = "BE-OUTBREAK-PREPARED",url = "https://github.com/beoutbreakprepared/nCoV2019/raw/master/latest_data/latestdata.tar.gz", pattern = "latestdata.csv")
+latestDataFile = dpc$datasets$downloadAndUntar(id = "BE-OUTBREAK-PREPARED",url = 
+  #"https://github.com/beoutbreakprepared/nCoV2019/raw/master/latest_data/latestdata.tar.gz", pattern = "latestdata.csv")
+  "https://github.com/beoutbreakprepared/nCoV2019/raw/d8a68075fd17707fc8f861e93f775b6ec6e0158b/latest_data/latestdata.tar.gz", pattern = "latestdata.csv")
 latestdata <- readr::read_csv(
   latestDataFile,
   col_types = readr::cols(.default = readr::col_character())
@@ -390,15 +416,20 @@ latestdata2 = latestdata2 %>% select(date_onset_symptoms,travel_history_dates) %
   ) %>%
   mutate(
     travel.from = ifelse(is.na(travel.from),travel.to,travel.from),
-    left = as.integer(date_onset_symptoms - travel.to),
-    right = as.integer(date_onset_symptoms - travel.from)
-  )
+    left = as.integer(date_onset_symptoms - travel.to)-0.5,
+    right = as.integer(date_onset_symptoms - travel.from)+0.5
+  ) %>% filter(travel.to<date_onset_symptoms)
 
-bopFit = DistributionFit$new(c("gamma","lnorm","nbinom","weibull"))
+devtools::load_all("~/Git/uk-covid-datatools/")
+bopFit = DistributionFit$new(c("gamma","lnorm","weibull"))
 bopFit$models$weibull$lower$shape = 1
 bopFit$models$weibull$start$shape = 1.1
 bopFit$models$gamma$lower$shape = 1
 bopFit$models$gamma$start$shape = 1.1
+# bopFit$models$gamma$support = c(0.01,Inf)
+# bopFit$models$weibull$support = c(0.01,Inf)
+# bopFit$models$lnorm$support = c(0.01,Inf)
+
 bopFit$fromCensoredData(latestdata2,lowerValueExpr = left, upperValueExpr = right,truncate = TRUE,bootstraps = 200)
 
 
@@ -409,19 +440,25 @@ ff100 = dpc$spim$getFF100()
 
 censIncub = ff100 %>% filter(!is.na(date_exposure_first)) %>% select(date_exposure_first,date_exposure_last,date_onset) %>%
   mutate(
-    right = as.numeric(date_onset-date_exposure_first), 
-    left = as.numeric(date_onset-date_exposure_last)) %>%
+    right = as.numeric(date_onset-date_exposure_first)+0.5, 
+    left = as.numeric(date_onset-date_exposure_last)-0.5) %>%
   mutate( 
     left = ifelse(left<=0,NA_integer_,left)
   ) %>% filter( right > 0)
 
-incubFF100Fit = DistributionFit$new(distributions = c("weibull","lnorm","gamma","nbinom"))
+incubFF100Fit = DistributionFit$new(distributions = c("gamma","lnorm","weibull"))
 incubFF100Fit$models$weibull$lower$shape = 1
 incubFF100Fit$models$weibull$start$shape = 1.1
 incubFF100Fit$models$gamma$lower$shape = 1
 incubFF100Fit$models$gamma$start$shape = 1.1
 incubFF100Fit$fromCensoredData(censIncub,lowerValueExpr = left,upperValueExpr = right,truncate = TRUE, bootstraps = 200)
 #incubFF100Fit$plot(xlim=c(0,7))
+
+
+fitdistrplus::cdfcompcens(bopFit$distFits,plotstyle = "ggplot")
+fitdistrplus::ppcompcens(bopFit$distFits,plotstyle = "ggplot")
+
+
 ```
 
 ```{r}
@@ -437,11 +474,11 @@ fig5a = incubFF100Fit$plot(xlim = c(0,15))+
      standardPrintOutput::cornerAnnotation(label4)+
      xlab("days")+ylab("density")+standardPrintOutput::narrower()+
     coord_cartesian(ylim=c(0,0.75))
-#fig6 %>% standardPrintOutput::saveSixthPageFigure("~/Dropbox/covid19/serial-interval/Fig6_ff100Incubation")
+#fig6 %>% standardPrintOutput::saveSixthPageFigure(here::here("output/Fig6_ff100Incubation"))
 
 fig5 = (fig5a|fig5b)/patchwork::guide_area()+patchwork::plot_annotation(tag_levels = "A")+patchwork::plot_layout(guides = "collect", heights=c(10,1))
 
-fig5 %>% standardPrintOutput::saveThirdPageFigure("~/Dropbox/covid19/serial-interval/Fig3_IncubationPeriodsBeOutbreakPreparedAndFF100")
+fig5 %>% standardPrintOutput::saveThirdPageFigure(here::here("output/Fig3_IncubationPeriodsBeOutbreakPreparedAndFF100"))
 ```
 
 `r cap$fig("incub-period","Incubation period distributions reconstructed from Open COVID-19 Data Working Group and from FF100 data. Histogram data is not shown as the interval censored data cannot be plotted in this form")`
@@ -453,8 +490,8 @@ fig5 %>% standardPrintOutput::saveThirdPageFigure("~/Dropbox/covid19/serial-inte
 bind_rows(
   incubFF100Fit$printDistributionDetail() %>% mutate(source = "FF100"),
   bopFit$printDistributionDetail() %>% mutate(source = "Open COVID-19 Data Working Group")
-) %>% ungroup() %>% select(Source = source, N = n, AIC = aic, BIC = bic, `Log-likelihood`=loglik, Distribution) %>% distinct() %>% 
-  group_by(Source,N) %>% arrange(AIC, Distribution) %>% standardPrintOutput::saveTable("~/Dropbox/covid19/serial-interval/Table_IncubationPeriodFitQuality",colWidths = c(2,1,2,2,2,2),defaultFontSize = 8)
+) %>% ungroup() %>% mutate(AIC = sprintf("%1.1f",aic), BIC = sprintf("%1.1f",bic), `Log-likelihood`=sprintf("%1.1f",loglik), Distribution) %>% select(Source = source, N = n, AIC, BIC, `Log-likelihood`, Distribution) %>% distinct() %>% 
+  group_by(Source,N) %>% arrange(AIC, Distribution) %>% standardPrintOutput::saveTable(here::here("output/Table3_IncubationPeriodFitQuality"),colWidths = c(2,1,2,2,2,2),defaultFontSize = 8)
 ```
 
 ## Generation interval estimation
@@ -463,7 +500,7 @@ bind_rows(
 
 ```{r}
 incubFit = bopFit$clone()
-incubFit$filterModels(aic == min(aic))
+incubFit = incubFit$filterModels(aic == min(aic))
 incubFit$bootstraps = incubFit$bootstraps %>% filter(bootstrapNumber <= 100)
 
 # generate a set of samples from best fitting incubation period distribution
@@ -551,7 +588,8 @@ genIntTmp = dpc$getHashCached(object = expt,operation = "GENERATION-INTERVAL-OPT
   })
   #genInt = genInt %>% mutate(shape = mean^2/sd^2, rate = mean/sd^2)
   generationIntervalSimulation = genInt %>% select(bootstrapNumber,shape,rate) %>% pivot_longer(cols = c(shape,rate), names_to = "param", values_to = "value") %>% mutate(dist="gamma")
-  usethis::use_data(generationIntervalSimulation, overwrite = TRUE)
+  save(generationIntervalSimulation, file = here::here("output/generationIntervalSimulation.rda"), compress = "bzip2", version = 2)
+  #usethis::use_data(generationIntervalSimulation, overwrite = TRUE)
   return(generationIntervalSimulation)
 })
 
@@ -559,11 +597,11 @@ si4 = SerialIntervalProvider$generationInterval(dpc,bootstrapsDf = genIntTmp)
 
 # export gen int sample probability distributions
 tmp = si4$getCustomConfigs(quick=FALSE)[[1]][[1]]$si_sample
-tmp %>% write.table("~/Git/uk-covid-datatools/vignettes/serial-interval/generation-interval-fitted-si-sample.txt")
+tmp %>% write.table(here::here("output/generation-interval-fitted-si-sample.txt"))
 
 # export distribution parameters
 si4$dfit$bootstraps %>% pivot_wider(names_from = "param",values_from = "value") %>% 
-  mutate(mean = shape/rate, sd = sqrt(shape/(rate^2))) %>% write_csv("~/Git/uk-covid-datatools/vignettes/serial-interval/generation-interval-fitted-parameters.csv")
+  mutate(mean = shape/rate, sd = sqrt(shape/(rate^2))) %>% write_csv(here::here("output/generation-interval-fitted-parameters.csv"))
 
 ```
 
@@ -574,7 +612,7 @@ label5 = si4$dfit$printDistributionDetail() %>% ungroup() %>% summarise(label = 
 # label5 = distLabel(si4$dfit)
 fig6 = si4$dfit$plot(c(0,15))+xlab("Generation interval (days)")+ylab("density")+guides(fill="none",colour="none")+standardPrintOutput::cornerAnnotation(label5)
 
-fig6 %>% standardPrintOutput::saveSixthPageFigure("~/Dropbox/covid19/serial-interval/Fig4_GenerationInterval")
+fig6 %>% standardPrintOutput::saveSixthPageFigure(here::here("output/Fig4_GenerationInterval"))
 
 # https://mc-stan.org/users/documentation/case-studies/boarding_school_case_study.html
 # https://magesblog.com/post/2016-09-27-fitting-distribution-in-stan-from/
@@ -606,9 +644,9 @@ ukts = ukts %>%
   tsp$imputeAndWeeklyAverage() #%>%
   #tsp$logIncidenceStats(smoothingWindow = 14, growthRateWindow = 14)
 
-fig3 = ukts %>% tsp$plotIncidenceQuantiles(colour = statistic, events = siDates, labelSize=9) +scale_color_brewer(palette="Dark2")  #+ geom_vline(data = tibble(date=ends), aes(xintercept=date), colour="black")
+fig3 = ukts %>% tsp$plotIncidenceQuantiles(colour = statistic, events = siDates, labelSize=9, window=7) +scale_color_brewer(palette="Dark2")  #+ geom_vline(data = tibble(date=ends), aes(xintercept=date), colour="black")
 
-fig3 %>% standardPrintOutput::saveThirdPageFigure("~/Dropbox/covid19/serial-interval/Fig5_EpidemicCurve")
+fig3 %>% standardPrintOutput::saveThirdPageFigure(here::here("output/Fig5_EpidemicCurve"))
 
 #ukts %>% tsp$plotRt(colour = statistic)
 
@@ -622,9 +660,9 @@ fig3 %>% standardPrintOutput::saveThirdPageFigure("~/Dropbox/covid19/serial-inte
 meanlim=c(2,8)
 sdlim=c(1,6)
 
-ukcases = ukts %>% tsp$logIncidenceStats() %>% filter(statistic=="case")
+ukcases = ukts %>% filter(statistic=="case") %>% tsp$logIncidenceStats(smoothingWindow = 7)
 
-siImpact = dpc$datasets$getHashCached(object=ukcases, params = list(siDates, meanlim,sdlim), operation = "SERIAL-INTERVAL-IMPACT", orElse = function(...) {
+siImpact = dpc$datasets$getHashCached(object=ukcases, params = list(siDates, meanlim,sdlim), operation = "SERIAL-INTERVAL-IMPACT", nocache=TRUE, orElse = function(...) {
   # perform the Rt estimate for the various mean sd combinations
   I = ukcases %>% pull(Est.value)
   dates = ukcases %>% pull(date)
@@ -706,6 +744,7 @@ plotSiVariability = function(d, xlim = meanlim, ylim = sdlim) { #, contours) {
   # )
   ggplot(data, aes(x=siMean, y=siSd, z=medianR, fill=1/medianR))+ #geom_tile()+
     metR::geom_contour2(colour="black", breaks=contours,alpha=0.8)+
+    metR::geom_text_contour(colour="black", breaks=contours,stroke=0.3,alpha=0.8, size=standardPrintOutput::labelInPoints(12))+
     # scale_fill_gradient2(high="cyan",mid="white",low="orange", midpoint=1, limits=c(1/4,1/0.6), guide="none", oob=scales::squish)+
     
     # geom_linerange(data=serialIntervals, aes(
@@ -724,7 +763,7 @@ plotSiVariability = function(d, xlim = meanlim, ylim = sdlim) { #, contours) {
     geom_point(data=siFits,aes(x=meanOfMean,y=meanOfSd,colour=name),inherit.aes = FALSE, size=2)+
     
     
-    metR::geom_text_contour(colour="black", breaks=contours,stroke=0.3,alpha=0.8, size=standardPrintOutput::labelInPoints(12))+
+    
     
     coord_cartesian(xlim,ylim)+
     scale_size(range=c(0.1,2),name = "Samples")+
@@ -745,7 +784,7 @@ p2 = plts[[2]]+hideX()+hideY()
 p3 = plts[[3]]
 p4 = plts[[4]]+hideY()
 
-(((p1|p2)/(p3|p4)/patchwork::guide_area()) +patchwork::plot_layout(guides = "collect",height=c(5,5,1)))  %>% saveHalfPageFigure("~/Dropbox/covid19/serial-interval/Fig6_EstimatesOfRtForSIAssumptions")
+(((p1|p2)/(p3|p4)/patchwork::guide_area()) +patchwork::plot_layout(guides = "collect",height=c(5,5,1)))  %>% saveHalfPageFigure(here::here("output/Fig6_EstimatesOfRtForSIAssumptions"))
 
 ```
 
@@ -755,9 +794,15 @@ p4 = plts[[4]]+hideY()
 
 ```{r}
 CHESS = dpc$spim$getCHESS()
-CHESSClean = CHESS %>% chp$chessAdmissionSubset()
+chp = dpc$chessProcessor()
+CHESSClean = CHESS %>% chp$chessAdmissionSubset(updatedWithin = 21)
 #plots=list()
 #tables=list()
+
+totalCHESS = nrow(CHESSClean)
+percentageCHESSWithDates = sprintf("%1.1f%%",length(na.omit(CHESSClean$estimateddateonset))/nrow(CHESSClean)*100)
+
+
 
 ```
 
@@ -790,14 +835,17 @@ rawOnset = bind_rows(
 ) %>% group_by(transition)
 
 
-onsetFit = DistributionFit$new(distributions = c("lnorm","gamma","weibull","nbinom"))$fromUncensoredData(rawOnset, valueExpr = time, truncate = TRUE, bootstraps = 100)
-onsetPlot = onsetFit$plot(xlim = c(-2,20))+xlab("onset to observation (days)")+standardPrintOutput::narrowAndTall()
+onsetPlot = ggplot(rawOnset, aes(x=time))+geom_histogram(fill=NA,colour="grey50", binwidth = 1)+facet_wrap(vars(transition), scales="free")+coord_cartesian(xlim = c(-2,20))+xlab("onset to observation (days)")
+
+# onsetFit = DistributionFit$new(distributions = c("lnorm","gamma","weibull"))$fromUncensoredData(rawOnset, valueExpr = time, truncate = TRUE, bootstraps = 100)
+# onsetPlot = onsetFit$plot(xlim = c(-2,20))+xlab("onset to observation (days)")+standardPrintOutput::narrowAndTall()
 
 #plots$onsetToTest = onsetToTestFit$plot(xlim = c(-2,20))+xlab("time delay")
 #tables$onsetToTest = onsetToTestFit$printDistributionDetail()
+
 ```
 
-In `r ref$fig("chess-delay")` we show probability distributions fitted to data from the CHESS data set which define times from symptom onset (Panel A) to case identification (*T~onset→case~*), admission (*T~onset→admission~*), or death (*T~onset→death~*). Symptom onset to test (case identification) can be a negative quantity if a swab is taken during disease screening and the patient is pre-symptomatic. In this data the time point that defines the time of test is the date when the specimen is taken, which will subsequently be tested positive for SARS-CoV-2, so does not include sample processing delays. However in this hospital based data source of admitted patients the onset data was collected retrospectively. We also note peaks at 1 day, 1 week, 2 weeks, and so on which suggests approximation on data entry, and there may well be biases in the data collection. 
+There are `r totalCHESS` patients in the subset of the CHESS database we examined of which `r percentageCHESSWithDates` had a symptom onset date. In `r ref$fig("chess-delay")` we show probability distributions fitted to data from the CHESS data set which define times from symptom onset (Panel A) to case identification (*T~onset→case~*), admission (*T~onset→admission~*), or death (*T~onset→death~*). Symptom onset to test (case identification) can be a negative quantity if a swab is taken during disease screening and the patient is pre-symptomatic. In this data the time point that defines the time of test is the date when the specimen is taken, which will subsequently be tested positive for SARS-CoV-2, so does not include sample processing delays. However in this hospital based data source of admitted patients the onset data was collected retrospectively. We also note peaks at 1 day, 1 week, 2 weeks, and so on which suggests approximation on data entry, and there may well be biases in the data collection. 
 
 It is more obvious from the clinical course of COVID-19 that admission should occur after disease onset. In the data, a large number of cases are reported to have symptom onset on day of admission. This is potentially a reporting artifact as in the absence of certain knowledge about onset, it is possible that the day of admission may have been captured instead, and we again see the peaks at 1 week, 2 weeks, and so on, suggesting approximations in data entry. 
 
@@ -829,13 +877,13 @@ infectionToObservationDelay = combinedDelay %>%
   mutate(timeDelay = incub2+delay2) %>% ungroup() %>%
   select(transition,timeDelay,bootstrapNumber,sampleNumber)
 
-infectionToObservationFit = DistributionFit$new(distributions = c("lnorm","gamma","nbinom","weibull"))
+infectionToObservationFit = DistributionFit$new(distributions = c("lnorm","gamma","weibull"))
 infectionToObservationFit$fromBootstrappedData(infectionToObservationDelay %>% select(-sampleNumber) %>% group_by(transition), valueExpr = timeDelay)
 
 infectionPlot = (infectionToObservationFit$plot(c(-2,20))+standardPrintOutput::narrowAndTall()+xlab("infection to observation (days)"))
 
 chessPlot = onsetPlot + infectionPlot +patchwork::guide_area() + patchwork::plot_annotation(tag_levels = "A") + patchwork::plot_layout(ncol=1, guides="collect",heights = c(5,5,1))
-chessPlot %>% saveHalfPageFigure("~/Dropbox/covid19/serial-interval/Fig7_ChessTimeDelayDistributions")
+chessPlot %>% saveHalfPageFigure(here::here("output/Fig7_ChessTimeDelayDistributions"))
 
 ```
 
@@ -870,11 +918,12 @@ ukCovidObservationDelays = timeCorrection2 %>%
     `SD (days)` = sprintf("%1.2f",sd),
     `95% quantiles (days)` = sprintf("%1.2f; %1.2f",lower, upper)
   )
-usethis::use_data(ukCovidObservationDelays, overwrite = TRUE)
+save(ukCovidObservationDelays, file = here::here("output/ukCovidObservationDelays.rda"), compress = "bzip2", version = 2)
+#usethis::use_data(ukCovidObservationDelays, overwrite = TRUE)
 
 ukCovidObservationDelays %>% arrange(mean) %>% select(c(-mean,-sd,-lower,-upper)) %>%
   rename(Observation=to) %>%
-  standardPrintOutput::saveTable(filename="~/Dropbox/covid19/serial-interval/Table2_TimeCorrectionsFromIncubationPeriodAndDelayToObservation", defaultFontSize = 8)
+  standardPrintOutput::saveTable(filename=here::here("output/Table3_TimeCorrectionsFromIncubationPeriodAndDelayToObservation"), defaultFontSize = 8)
 
 ```
 
@@ -886,7 +935,7 @@ ukCovidObservationDelays %>% arrange(mean) %>% select(c(-mean,-sd,-lower,-upper)
 # http://freerangestats.info/blog/2020/07/18/victoria-r-convolution
 
 convolutionsFit = infectionToObservationFit$clone()
-convolutionsFit$filterModels(aic == min(aic))
+convolutionsFit = convolutionsFit$filterModels(aic == min(aic))
 pmfs = convolutionsFit$discreteProbabilities(q = 0:30)
 pmfs = pmfs %>% mutate(statistic = case_when(
   transition == "infection to test" ~ "case",
@@ -895,7 +944,7 @@ pmfs = pmfs %>% mutate(statistic = case_when(
   TRUE ~ NA_character_
 ))
 
-ukts2 = ukts %>% group_by(statistic) %>% group_modify(function(d,g,...) {
+ukts2 = ukts %>% filter(type=="incidence") %>% group_by(statistic) %>% group_modify(function(d,g,...) {
 
   caseSts = surveillance::sts(
     observed = d %>% pull(Imputed.value) ,
@@ -931,12 +980,12 @@ ukts2 = ukts %>% group_by(statistic) %>% group_modify(function(d,g,...) {
 
 
 ukts3 = ukts2 %>%
-  tsp$logIncidenceStats(valueVar = Deconv.value, growthRateWindow = 14, smoothingWindow = 14) %>%
+  tsp$logIncidenceStats(valueVar = Deconv.value, growthRateWindow = 14, smoothingWindow = 7) %>%
   tsp$estimateRtQuick(valueVar = Est.Deconv.value, serialIntervalProvider = SerialIntervalProvider$generationInterval(dpc), window = 7)
 #ggplot(result,aes(x=date,fill=statistic,colour=statistic))+geom_point(aes(y=observed))+geom_line(aes(y=smoothed))+geom_line(aes(y=Deconv.value),linetype="dashed")+geom_ribbon(aes(ymin=lower,ymax=upper),fill="blue",colour=NA,alpha=0.2)
 
 ukts4 = ukts2 %>%
-  tsp$logIncidenceStats(valueVar = value, growthRateWindow = 14, smoothingWindow = 14) %>%
+  tsp$logIncidenceStats(valueVar = value, growthRateWindow = 14, smoothingWindow = 7) %>%
   tsp$estimateRtQuick(valueVar = Est.value, window = 7) %>%
   tsp$adjustRtDates(window = 0)
 
@@ -963,17 +1012,17 @@ avRtError = ukts3 %>% ungroup() %>% select(date,statistic,deconv=`Median(R)`) %>
 # rtDeconv = ukts3 %>% tsp$plotRt(colour = statistic,dates = c("2020-03-01","2020-07-01"))+facet_wrap(vars(statistic))+guides(fill="none",colour="none") #+scale_color_brewer(palette = "Dark2")
 # rtRaw = ukts4 %>% tsp$plotRt(colour = statistic,dates = c("2020-03-01","2020-07-01"))+guides(fill="none",colour="none")+facet_wrap(vars(statistic))
 
-incidence = ukts6 %>% tsp$plotIncidenceQuantiles(colour=subgroup,dates = c("2020-03-01","2020-07-01")) + facet_wrap(vars(statistic))+
+incidence = ukts6 %>% tsp$plotIncidenceQuantiles(colour=subgroup,dates = c("2020-03-01","2020-07-01"),window=7) + facet_wrap(vars(statistic))+
   scale_color_brewer(palette = "Dark2")
 
-rtComp = ukts5 %>% tsp$plotRt(colour = subgroup,dates = c("2020-03-01","2020-07-01"), rtlim=c(0.5,1.75))+facet_wrap(vars(statistic))+
+rtComp = ukts5 %>% tsp$plotRt(colour = subgroup,dates = c("2020-03-01","2020-07-01"), rtlim=c(0.5,1.75), ribbons = FALSE)+facet_wrap(vars(statistic))+
   scale_color_brewer(palette = "Dark2")
   #scale_linetype_manual(values = c("21","solid"))+
   #standardPrintOutput::narrower()
 
 deconvComparison = (incidence+standardPrintOutput::hideX()) + rtComp + patchwork::plot_annotation(tag_levels = "A") + patchwork::plot_layout(ncol = 1, guides = "collect", heights = c(5,5))
 
-deconvComparison %>% standardPrintOutput::saveHalfPageFigure("~/Dropbox/covid19/serial-interval/Fig8_DeconvolutionVersusUndajusted")
+deconvComparison %>% standardPrintOutput::saveHalfPageFigure(here::here("output/Fig8_DeconvolutionVersusUndajusted"))
 # note the actual estimates are in x2@upperbound, which adds up to 39, same as the original y
 ```
 
@@ -1042,7 +1091,7 @@ Robert Challen^1,2^; Ellen Brooks-Pollock^3^; Krasimira Tsaneva-Atanasova^1,4,5^
 ## `r cap$stab("dfit-serial-interval-ff100","Parametererised serial interval distributions from FF100. Gamma and Negative Binomial estimates are from data truncated at zero. AIC estimates are not comparable to those for Normal distribution which is fitting all data, including negative serial intervals, and hence has a lower mean.")`
 
 ```{r}
-si3$dfit$printDistributionDetail() %>% ungroup() %>% select(N=n, AIC=aic, Distribution, `Parameter / Moment` = param, `Mean ± SD (95% CI)`) %>% group_by(Distribution, AIC, N) %>% arrange(AIC) %>% standardPrintOutput::saveTable("~/Dropbox/covid19/serial-interval/TableS1_ParametersFF100SerialInterval")
+si3$dfit$printDistributionDetail() %>% ungroup() %>% select(N=n, AIC=aic, Distribution, `Parameter / Moment` = param, `Mean ± SD (95% CI)`) %>% group_by(Distribution, AIC, N) %>% arrange(AIC) %>% standardPrintOutput::saveTable(here::here("output/TableS1_ParametersFF100SerialInterval"))
 ```
 
 ## `r cap$sfig("meta-analysis","Forest plot for serial interval studies for A, the mean and B, the standard deviation of the serial interval, using the normal mixture random effect model, and from studies identified in the literature which assume a Gamma distributed serial interval")`
@@ -1052,23 +1101,24 @@ library(metaplus)
 tmp = serialIntervals %>% mutate(yi = mean_si_estimate, sei = (mean_si_estimate_high_ci-mean_si_estimate_low_ci)/3.92) %>% filter(!is.na(sei)) %>% filter(assumed_distribution == "gamma" & estimate_type %>% stringr::str_starts("serial"))
   meanfit = suppressWarnings(metaplus::metaplus(tmp$yi, tmp$sei, slab=tmp$label, random="mixture"))
       
-plot(meanfit, cex=0.6, main="mean")
+# plot(meanfit, cex=0.6, main="mean")
 
-```
-
-```{r}
 tmp2 = serialIntervals %>% mutate(yi = std_si_estimate, sei = (std_si_estimate_high_ci-std_si_estimate_low_ci)/3.92) %>% filter(!is.na(sei)) %>% filter(assumed_distribution == "gamma" & estimate_type %>% stringr::str_starts("serial"))
 sdfit = suppressWarnings(metaplus::metaplus(tmp2$yi, tmp2$sei, slab=tmp2$label, random="mixture"))
   
-plot(sdfit, cex=0.6, main="std dev")
 
+p = patchwork::wrap_elements(full = ~ plot(meanfit, cex=0.4, main="mean"))+
+  patchwork::wrap_elements(full = ~ plot(sdfit, cex=0.4, main="std dev"))+
+  patchwork::plot_layout(ncol=2)
+
+p %>% standardPrintOutput::saveThirdPageFigure(here::here("output/FigureS1_ParametersResampledSerialInterval"))
 ```
 
 
 ## `r cap$stab("dfit-serial-interval-resample","Parametererised serial interval distributions from resampling the literature. Gamma and Negative Binomial estimates are from data truncated at zero. AIC estimates are not comparable to those for Normal distribution which is fitting all data, including negative serial intervals, and hence has a lower mean.")`
 
 ```{r}
-si1$dfit$printDistributionDetail() %>% ungroup() %>% select(N=n, AIC=aic, Distribution, `Parameter / Moment` = param, `Mean ± SD (95% CI)`) %>% group_by(Distribution, AIC, N) %>% arrange(AIC) %>% standardPrintOutput::saveTable("~/Dropbox/covid19/serial-interval/TableS2_ParametersResampledSerialInterval")
+si1$dfit$printDistributionDetail() %>% ungroup() %>% mutate(AIC = sprintf("%1.1f",aic)) %>% select(N=n, AIC, Distribution, `Parameter / Moment` = param, `Mean ± SD (95% CI)`) %>% group_by(Distribution, AIC, N) %>% arrange(AIC) %>% standardPrintOutput::saveTable(here::here("output/TableS2_ParametersResampledSerialInterval"))
 ```
 
 ## `r cap$stab("incub-period-detail","Distribution details for estimated incubation period distributions reconstructed from Open COVID-19 Data Working Group and from FF100 data")`
@@ -1077,18 +1127,18 @@ si1$dfit$printDistributionDetail() %>% ungroup() %>% select(N=n, AIC=aic, Distri
 bind_rows(
   incubFF100Fit$printDistributionDetail() %>% mutate(source = "FF100"),
   bopFit$printDistributionDetail() %>% mutate(source = "Open COVID-19 Data Working Group")
-) %>% ungroup() %>% select(Source = source, N = n, AIC = aic, Distribution, `Parameter / Moment` = param, `Mean ± SD (95% CI)`) %>% arrange(N, AIC, Distribution) %>%
-  group_by(N, Source, AIC, Distribution) %>% standardPrintOutput::saveTable("~/Dropbox/covid19/serial-interval/TableS3_IncubationPeriodsBeOutbreakPreparedAndFF100_Detail")
+) %>% ungroup()  %>% mutate(AIC = sprintf("%1.1f",aic)) %>% select(Source = source, N = n, AIC, Distribution, `Parameter / Moment` = param, `Mean ± SD (95% CI)`) %>% arrange(N, AIC, Distribution) %>%
+  group_by(N, Source, AIC, Distribution) %>% standardPrintOutput::saveTable(here::here("output/TableS3_IncubationPeriodsBeOutbreakPreparedAndFF100_Detail"))
 ```
 
 ## `r cap$stab("chess-delay-params","Time delay distributions estimated from CHESS data set, for both transitions from disease onset to case, admission or death, and presumed infection and case, admission or death")`
 
 ```{r}
 suppTable = bind_rows(
-  onsetFit$printDistributionDetail(),
-  infectionToObservationFit$printDistributionDetail()
-) %>% ungroup() %>% select(-dist,-bic,-loglik,-mean,-sd,-lower,-upper,-shift) %>% rename(Transition = transition, Parameter= param, AIC= aic, N=n)  %>% group_by(Transition, N, AIC, Distribution) %>% arrange(AIC)
-suppTable %>% standardPrintOutput::saveTable("~/Dropbox/covid19/serial-interval/TableS4_ChessTimeDelayDistributionsDetail",defaultFontSize = 7)
+  #onsetFit$printDistributionDetail(),
+  infectionToObservationFit$printDistributionDetail() 
+) %>% ungroup()  %>% mutate(AIC = sprintf("%1.1f",aic)) %>% select(-dist,-bic,-aic,-loglik,-mean,-sd,-lower,-upper,-shift) %>% rename(Transition = transition, Parameter= param, N=n)  %>% group_by(Transition, N, AIC, Distribution) %>% arrange(AIC)
+suppTable %>% standardPrintOutput::saveTable(here::here("output/TableS4_ChessTimeDelayDistributionsDetail"),defaultFontSize = 7)
 ```
 
 
@@ -1106,7 +1156,7 @@ In which the quantity $T_{onset \to observation,Y} - T_{onset \to observation,X}
 
 ```{r}
 
-simulatedSI = rawDelay %>%
+simulatedSI = rawDelay %>% 
   mutate(between = transition %>% stringr::str_remove("infection to")) %>% #actually this is not infection to anything, its observation to observation
   group_by(between,bootstrapNumber) %>%
   group_modify(function(d,g,...) {
@@ -1133,10 +1183,14 @@ simulatedSIFit  = DistributionFit$new(c("norm","gamma","lnorm"))
 
 simulatedSIFit$fromBootstrappedData(simulatedSI %>% group_by(between) %>% select(bootstrapNumber,siTo), valueExpr = siTo, method="mge") #method="qme", probs=seq(0.4,0.6,by = 0.02))
 fig7 = simulatedSIFit$plot(xlim=c(-7,28),summary=TRUE)+xlab("Time interval")
-fig7 %>% saveHalfPageFigure("~/Dropbox/covid19/serial-interval/FigS1_ObservationIntervalDistributions")
+fig7 %>% saveHalfPageFigure(here::here("output/FigS1_ObservationIntervalDistributions"))
 ```
 
+## `r cap$stab("chess-trusts","The NHS trusts in the CHESS dataset who report all admissions")`
 
+```{r}
+CHESSClean %>% group_by(Trust = trustname) %>% summarise(Patients = n())
+```
 
 ## `r cap$sfig("parameter-distributions","The distribution of the parameters of the fitted generation interval estimates")`
 
@@ -1146,7 +1200,6 @@ parameterDistributions = si4$dfit$bootstraps %>% pivot_wider(names_from = "param
   mutate(mean = shape/rate, sd = sqrt(shape/(rate^2)))
 
 
-
 p1 = ggplot(parameterDistributions,aes(x=mean,y=sd,colour=shape*rate))+geom_point(show.legend = FALSE)+scale_color_distiller(palette = "YlGnBu",trans="sqrt")
 p1a = ggExtra::ggMarginal(p1,type="density",fill="grey90")
 
@@ -1154,7 +1207,7 @@ p2 = ggplot(parameterDistributions,aes(x=shape,y=rate,colour=shape*rate))+geom_p
 p2a = ggExtra::ggMarginal(p2,type="density",fill="grey90")
 
 p3 = patchwork::wrap_elements(p1a)+patchwork::wrap_elements(p2a)+patchwork::plot_layout(ncol=2)
-p3 %>% saveHalfPageFigure("~/Dropbox/covid19/serial-interval/FigS3_GenerationIntervalParameterDistributions")
+p3 %>% saveHalfPageFigure(here::here("output/FigS3_GenerationIntervalParameterDistributions"))
 
 ```
 

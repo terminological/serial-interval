@@ -1,0 +1,1146 @@
+---
+title: "Meta-analysis of the SARS-CoV-2 serial interval and the impact of parameter uncertainty on the COVID-19 reproduction number"
+# output:
+#   pdf_document :
+#     fig_caption: yes
+# knit: (function(inputFile, encoding,...) {
+#   options("spo.hidefigures"=FALSE);
+#   rmarkdown::render(
+#     inputFile,
+#     encoding = encoding,
+#     output_dir = here::here("output"), output_file=paste0('serial-intervals-',Sys.Date(),'.pdf'))
+#   })
+output:
+  word_document :
+    fig_caption: yes
+    fig_width: 7
+knit: (function(inputFile, encoding,...) {
+  options("spo.hidefigures"=TRUE);
+  rmarkdown::render(
+    inputFile,
+    encoding = encoding,
+    output_dir = here::here("output"), output_file=paste0('serial-intervals-',Sys.Date(),'.docx'))
+  })
+header-includes:
+ \usepackage{float}
+ \floatplacement{figure}{H}
+ `r huxtable::report_latex_dependencies()`
+fig_width: 7
+fig_height: 5
+out.width: "100%"
+bibliography: serial-interval.bib
+csl: sage-vancouver.csl
+vignette: >
+  %\VignetteIndexEntry{COVID-19 Serial Intervals}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align="center"
+)
+```
+
+```{r setup}
+
+library(tidyverse)
+here::i_am("serial-intervals-suppl.Rmd")
+source(here::here("serial-intervals-data.R"))
+source(here::here("serial-intervals-captions.R"))
+```
+
+
+
+
+# References
+
+<div id="refs"></div>
+
+\newpage
+# Impact of uncertainty in serial interval, generation interval, incubation period and delayed observations in estimating the reproduction number for COVID 19
+
+Robert Challen^1,2^; Ellen Brooks-Pollock^3^; Krasimira Tsaneva-Atanasova^1,4,5^; Leon Danon^3,4,5^
+
+1) EPSRC Centre for Predictive Modelling in Healthcare, University of Exeter, Exeter, Devon, UK.
+2) Somerset NHS Foundation Trust, Taunton, Somerset, UK.
+3) Bristol Medical School, Population Health Sciences, University of Bristol, Bristol, UK.
+4) The Alan Turing Institute, British Library, 96 Euston Rd, London NW1 2DB, UK.
+5) Data Science Institute, College of Engineering, Mathematics and Physical Sciences, University of Exeter, Exeter, UK. 
+
+# Supplementary material
+
+## `r cap$stab("resampling-algo")`
+
+_INPUTS:_
+
+|   ***parameterised serial interval distributions***: 
+|       list of parameterised serial interval distribution results from literature sources
+|       comprising: 
+|           ***source***, the study the estimates come from
+|           ***distribution***, type of estimated serial interval distribution
+|           ***central estimate of mean***, 
+|           ***lower CI of mean***, if available
+|           ***upper CI of mean***, if available
+|           ***central estimate of sd***,
+|           ***lower CI of sd***, if available
+|           ***upper CI of sd***, if available
+|           ***sample size***
+|   ***raw serial interval observations***: 
+|       raw data of empirical serial interval distributions from literature sources
+|       comprising: 
+|           ***source***,
+|           set(***observed serial interval***)
+
+_OUTPUT:_
+
+|   ***output serial interval observations***: 
+|       a set of 100 bootstrap replicates containing real and synthetic serial intervals observations
+|       comprising: 
+|           ***iteration***, 
+|           set(***simulated serial interval***)
+
+_ALGORITHM:_
+
+|   for each ***source*** in ***raw serial interval observations***
+|       define ***sample size*** as the count of ***observed serial interval***
+|       for ***iteration*** in ***1 to 100***
+|           define set(***samples***) as random re-samples with replacement from ***observed serial interval***
+|           add (***iteration***, set(***samples***)) to ***output serial interval observations***
+|   for each ***source*** in ***parameterised serial interval distributions***
+|       --- we are recreating a set of sampling distributions $\mathcal{X}(\nu,\phi)$
+|       --- where $\mathcal{X}$ as ***distribution*** from study ***source*** (e.g. gamma, log-normal, normal)
+|       --- $\nu$ is a distribution of means compatible with study ***source***
+|       --- and $\phi$ is a distribution of sds compatible with study ***source***
+|       --- $\nu$ is assumed to be a truncated normal distribution
+|       --- and is the sample distribution of the mean
+|       define $\mu_{mean}$ as ***central estimate of mean***
+|       define $\sigma_{mean}$ as ***(upper CI of mean-lower CI of mean)/3.96*** or ***zero*** if CI not given
+|       define $\nu \sim \mathcal{N}(\mu_{mean},\sigma_{mean})$ truncated between ***lower CI of mean*** and ***upper CI of mean***
+|       --- $\phi$ is assumed either gamma distributed or chi-squared distributed
+|       --- depending on whether we have known confidence limits
+|       --- this is the sample distribution of the variance
+|       define $\mu_{sd}$ as ***central estimate of sd***
+|       define $N$ as ***sample size***
+|       if ***lower CI of sd*** and ***upper CI of sd*** are defined
+|           --- if we know confidence limits and mean of SD we assume it is Gamma distributed
+|           fit $\phi \sim \text{Gamma}(\alpha_{sd},\beta_{sd})$ to ***lower CI of sd*** and ***upper CI of sd*** with constraint $\mu_{sd} = \alpha_{sd}/\beta_{sd}$
+|       else
+|           --- if we know only know mean of SD (and sample size) we assume it is Chi-Squared distributed
+|           define $\phi \sim \frac{\mu_{sd}}{N-1}\sqrt{\tilde{\chi}^2_{N-1}}$
+|       for ***iteration*** in ***1 to 100***
+|           define $\mu_{sample}$ as random sample from $\nu$
+|           define $\sigma_{sample}$ as random sample from $\phi$
+|           define ***sampling distribution*** $\sim \mathcal{X}(\mu_{sample},\sigma_{sample})$; converting parameters as necessary
+|           define set(***samples***) as $N$ random samples from ***sampling distribution***
+|           add (***iteration***, set(***samples***)) to ***output serial interval observations***
+|   return ***output serial interval observations***
+
+
+
+in the case of a normally distributed variable the sampling distribution of the variance can be shown to be a Chi-squared distribution^1 with $n-1$ degress of freedom. given that the Chi-squared distribution is a particular form of a Gamma distribution then the following holds:
+
+$$
+(n-1)S^2_n/\sigma^2=n\hat\sigma^2_n/\sigma^2=\frac{1}{\sigma^2}\sum_i(x_i-\overline{x})^2\sim\tilde{\chi}^2_{n-1} \\
+\tilde{\chi}^2_{n-1} = \text{Gamma}\Big(\frac{n-1}{2},\frac{1}{2}\Big)\\
+X\sim\text{Gamma}(\alpha,\beta) \implies 
+aX\sim\text{Gamma}(\alpha,\beta/a) \\
+\hat\sigma^2_n=\frac{\sigma^2}{n}\left(\frac{n\hat\sigma^2_n}{\sigma^2}\right)\sim
+\text{Gamma}\left(\frac{n-1}{2},\frac{n}{2\sigma^2}\right) \\
+S^2_n=\frac{\sigma^2}{n-1}\left(\frac{(n-1)S^2_n}{\sigma^2}\right)\sim\text{Gamma}\left(\frac{n-1}{2},\frac{n-1}{2\sigma^2}\right) \\
+m = \kappa = \alpha = \frac{n-1}{2}\\
+\Omega = \kappa\theta = \frac{\alpha}{\beta} = \frac{1}{\sigma^2} \\
+
+S_n \sim \text{Nakagami}( \frac{n-1}{2}, \frac{1}{\sigma^2})
+$$
+
+In O’Neill (2014)^2 the asymptotic sampling distribution of the variance is explored with respect to the kurtosis of the underlying distribution, and this modifies the degrees of freedom calculation to the following where $\kappa$ is the kurtosis (this is their result 14).
+
+
+
+$$
+DF_nS^2_n/\sigma^2 \sim \tilde{\chi}^2_{DF_n} \\
+DF_n = \frac{2n}{\kappa-(n-3)/(n-1)} \\
+S^2_n=\frac{\sigma^2}{DF_n}\left(\frac{(DF_n)S^2_n}{\sigma^2}\right)\sim\text{Gamma}\left(\frac{DF_n}{2},\frac{DF_n}{2\sigma^2}\right) \\
+
+S_n \sim \text{Nakagami}( \frac{DF_n}{2}, \frac{1}{\sigma^2})
+$$
+
+Limited information about the kurtosis of the underlying distribution is available from the confidence limits on the standard deviations quoted in source studies and a closed form expression for these is given in O'Neill (2014)^1, which involves the population size form which the sample is taken, which we do not have. With both confidence intervals it is possible to elimitnate this unknown but in the end it is easiest to estimate the associated Nakagmai distribution numerically from the confidence intervals and mean of the standard deviation from the expression above.
+
+<!-- 
+N.B. question about whether this is completely correct as scaling sampling may be OK but 
+the relationships above are for variance not standard deviation
+The Gamma distribution may in fact be for the variance. If that is true then the more
+appropriate distribution could be the https://en.wikipedia.org/wiki/Nakagami_distribution
+for the sampling distribution of the std deviation. (https://cran.r-project.org/web/packages/nakagami/nakagami.pdf)
+
+Similarly instead of using the Chi-squared may be not completely correct
+
+Also in the O'Neill paper there is an expression for the confidence intervals in theory this is 
+would be possible to solve for the kurtosis.
+--->
+
+In the 
+
+1. O’Neill B. Some Useful Moment Results in Sampling Problems. The American Statistician [Internet]. 2014 Oct 2 [cited 2021 Jul 3];68(4):282–96. Available from: https://doi.org/10.1080/00031305.2014.966589
+2. 26.3 - Sampling Distribution of Sample Variance | STAT 414 [Internet]. PennState: Statistics Online Courses. [cited 2021 Jul 3]. Available from: https://online.stat.psu.edu/stat414/lesson/26/26.3
+
+
+
+
+## `r cap$stab("dfit-serial-interval-ff100")`
+
+```{r}
+siFF100$dfit$printDistributionDetail() %>% ungroup() %>% select(N=n, AIC=aic, Distribution, `Parameter / Moment` = param, `Mean ± SD (95% CI)`) %>% group_by(Distribution, AIC, N) %>% arrange(AIC) %>% standardPrintOutput::saveTable(here::here("output/TableS1_ParametersFF100SerialInterval"))
+```
+
+## `r cap$sfig("meta-analysis")`
+
+```{r}
+library(metaplus)
+tmp = serialIntervals %>% mutate(yi = mean_si_estimate, sei = (mean_si_estimate_high_ci-mean_si_estimate_low_ci)/3.92) %>% filter(!is.na(sei)) %>% filter(assumed_distribution == "gamma" & estimate_type %>% stringr::str_starts("serial"))
+meanfit = suppressWarnings(metaplus::metaplus(tmp$yi, tmp$sei, slab=tmp$label, random="mixture"))
+      
+# plot(meanfit, cex=0.6, main="mean")
+
+tmp2 = serialIntervals %>% mutate(yi = std_si_estimate, sei = (std_si_estimate_high_ci-std_si_estimate_low_ci)/3.92) %>% filter(!is.na(sei)) %>% filter(assumed_distribution == "gamma" & estimate_type %>% stringr::str_starts("serial"))
+sdfit = suppressWarnings(metaplus::metaplus(tmp2$yi, tmp2$sei, slab=tmp2$label, random="mixture"))
+  
+
+p = patchwork::wrap_elements(full = ~ plot(meanfit, cex=0.4, main="mean"))+
+  patchwork::wrap_elements(full = ~ plot(sdfit, cex=0.4, main="std dev"))+
+  patchwork::plot_layout(ncol=2)
+
+p %>% standardPrintOutput::saveThirdPageFigure(here::here("output/FigureS1_ParametersResampledSerialInterval"))
+```
+
+
+## `r cap$stab("dfit-serial-interval-resample")`
+
+```{r}
+siResampleDfit$printDistributionDetail() %>% ungroup() %>% mutate(AIC = sprintf("%1.1f",aic)) %>% select(N=n, AIC, Distribution, `Parameter / Moment` = param, `Mean ± SD (95% CI)`) %>% group_by(Distribution, AIC, N) %>% arrange(AIC) %>% standardPrintOutput::saveTable(here::here("output/TableS2_ParametersResampledSerialInterval"))
+```
+
+## `r cap$stab("incub-period-detail")`
+
+```{r}
+bind_rows(
+  incubFF100Fit$printDistributionDetail() %>% mutate(source = "FF100"),
+  bopFit$printDistributionDetail() %>% mutate(source = "Open COVID-19 Data Working Group")
+) %>% ungroup()  %>% mutate(AIC = sprintf("%1.1f",aic)) %>% select(Source = source, N = n, AIC, Distribution, `Parameter / Moment` = param, `Mean ± SD (95% CI)`) %>% arrange(N, AIC, Distribution) %>%
+  group_by(N, Source, AIC, Distribution) %>% standardPrintOutput::saveTable(here::here("output/TableS3_IncubationPeriodsBeOutbreakPreparedAndFF100_Detail"))
+```
+## `r cap$sfig("gof-incub-fit")`
+
+```{r}
+p1 = fitdistrplus::cdfcompcens(bopFit$distFits,plotstyle = "ggplot")+standardPrintOutput::smallLegend()+guides(linetype="none")+standardPrintOutput::defaultFigureLayout()+standardPrintOutput::narrower()
+p2 = fitdistrplus::ppcompcens(bopFit$distFits,plotstyle = "ggplot")+standardPrintOutput::narrowAndTall()+standardPrintOutput::defaultFigureLayout()
+p3 = fitdistrplus::qqcompcens(bopFit$distFits,plotstyle = "ggplot")+standardPrintOutput::narrowAndTall()+standardPrintOutput::defaultFigureLayout()
+((p1|(p2/p3))+patchwork::plot_layout(ncol=2,widths=c(4,6))) %>% standardPrintOutput::saveHalfPageFigure(here::here("output/FigS1_GOFBeOutPrepSerialInterval"))
+```
+
+
+## `r cap$sfig("parameter-distributions")`
+
+```{r}
+# export distribution parameters
+parameterDistributions = siGeneration$dfit$bootstraps %>% pivot_wider(names_from = "param",values_from = "value") %>% 
+  mutate(mean = shape/rate, sd = sqrt(shape/(rate^2)))
+
+
+p1 = ggplot(parameterDistributions,aes(x=mean,y=sd,colour=shape*rate))+geom_point(show.legend = FALSE)+scale_color_distiller(palette = "YlGnBu",trans="sqrt")
+p1a = ggExtra::ggMarginal(p1,type="density",fill="grey90")
+
+p2 = ggplot(parameterDistributions,aes(x=shape,y=rate,colour=shape*rate))+geom_point(show.legend = FALSE)+scale_color_distiller(palette="YlGnBu",trans="sqrt")
+p2a = ggExtra::ggMarginal(p2,type="density",fill="grey90")
+
+p3 = patchwork::wrap_elements(p1a)+patchwork::wrap_elements(p2a)+patchwork::plot_layout(ncol=2)
+p3 %>% saveHalfPageFigure(here::here("output/FigS3_GenerationIntervalParameterDistributions"))
+
+```
+
+Generation interval distribution parameterisation is useful for Bayesian approaches. We investigated the properties of the distributions and found the mean and standard deviation or shape and rate parameters of our estimates of the generation interval are not uniformly distributed through parameter space. 
+
+
+## `r cap$stab("chess-trusts")`
+
+```{r}
+CHESSClean %>% group_by(Trust = trustname) %>% summarise(Patients = n()) %>% standardPrintOutput::saveTable(here::here("output/TableS4_ChessTrusts"),defaultFontSize = 7)
+```
+
+## `r cap$stab("chess-delay-params")`
+
+```{r}
+suppTable = bind_rows(
+  #onsetFit$printDistributionDetail(),
+  infectionToObservationFit$printDistributionDetail() 
+) %>% ungroup()  %>% mutate(AIC = sprintf("%1.1f",aic)) %>% select(-dist,-bic,-aic,-loglik,-mean,-sd,-lower,-upper,-shift) %>% rename(Transition = transition, Parameter= param, N=n)  %>% group_by(Transition, N, AIC, Distribution) %>% arrange(AIC)
+suppTable %>% standardPrintOutput::saveTable(here::here("output/TableS4_ChessTimeDelayDistributionsDetail"),defaultFontSize = 7)
+```
+
+
+<!-- ## `r cap$sfig("observation-interval")` -->
+
+<!-- These distributions are based on the joint probability of serial interval (between onset) estimated from our literature re-sampling analysis and delay distributions from onset to observation, estimated from the CHESS data set. The joint probability is estimated as the combination of bootstrapped samples of raw data assuming these are independent (see discussion section). -->
+
+<!-- $$ -->
+<!-- \begin{aligned} -->
+<!-- SI_{observation,X \to Y} = SI_{onset, X \to Y} + T_{onset \to observation,Y} - T_{onset \to observation,X} -->
+<!-- \end{aligned} -->
+<!-- $$ -->
+<!-- In which the quantity $T_{onset \to observation,Y} - T_{onset \to observation,X}$ is essentially an error term with zero mean. We note that the un-truncated normal distributions mean is approximately equal for all 4 distributions, around 4.5 to 4.8, as the skew of the distribution affects the fitting process. In this figure the distributions were fitted using a maximum goodness of fit estimator. The serial interval for onset estimated in the main paper is included for comparison. -->
+
+
+<!-- ```{r} -->
+
+<!-- simulatedSI = rawDelay %>%  -->
+<!--   mutate(between = transition %>% stringr::str_remove("infection to")) %>% #actually this is not infection to anything, its observation to observation -->
+<!--   group_by(between,bootstrapNumber) %>% -->
+<!--   group_modify(function(d,g,...) { -->
+<!--     # each d here is a single bootstrap of delay from and to -->
+<!--     # grab a resampled serial interval bootstrap -->
+<!--     siEsts = si1$bootstrapSamples %>% filter(bootstrapNumber == g$bootstrapNumber) %>% pull(value) %>% sample(nrow(d)) -->
+<!--     d = d %>% mutate( -->
+<!--       siOriginal = siEsts, -->
+<!--       siTo = siEsts+delayOffset -->
+<!--     ) -->
+<!--     return(d) -->
+<!--   }) %>% -->
+<!--   select(between, bootstrapNumber,siOriginal,siTo,delayOffset) %>% -->
+<!--   bind_rows( -->
+<!--     si1$dfit$groupedDf %>% mutate( -->
+<!--       between = "onset", -->
+<!--       siOriginal = value, -->
+<!--       siTo = value, -->
+<!--       delayOffset = 0 -->
+<!--     ) %>% select(-value) -->
+<!--   ) -->
+
+<!-- simulatedSIFit  = DistributionFit$new(c("norm","gamma","lnorm")) -->
+
+<!-- simulatedSIFit$fromBootstrappedData(simulatedSI %>% group_by(between) %>% select(bootstrapNumber,siTo), valueExpr = siTo, method="mge") #method="qme", probs=seq(0.4,0.6,by = 0.02)) -->
+<!-- fig7 = simulatedSIFit$plot(xlim=c(-7,28),summary=TRUE)+xlab("Time interval") -->
+<!-- fig7 %>% saveHalfPageFigure(here::here("output/FigS1_ObservationIntervalDistributions")) -->
+<!-- ``` -->
+
+
+
+
+
+
+<!-- # OLD -->
+
+
+<!-- ## Serial interval standard deviation assuming delay to presentation -->
+
+<!-- * Serial intervals are a convolution of generation intervals, with a delay depending on time to presentation -->
+<!-- * In theory  -->
+<!-- * Linton et al estimates time to presentation / time to death etc -->
+<!-- * What effect does the serial interval of death-death or test-test events considered -->
+<!-- * simulate delay process using a gamma distribution -->
+<!-- * assume a known generation interval and simulate effects -->
+
+<!-- ```{r, fig.cap="Parameter distributions of resampled serial invervals"} -->
+<!-- estimates2 = DistributionFit$unconvertParameters(si1$dfit$bootstraps) %>% rename(value = mean) %>% bind_rows(si1$dfit$bootstraps) %>% filter(dist == "gamma") -->
+
+<!-- quants = estimates2 %>% group_by(param) %>% summarise( -->
+<!--   tibble( -->
+<!--     q=c(0.025,0.1,0.5,0.9,0.975), -->
+<!--     value=quantile(value,c(0.025,0.1,0.5,0.9,0.975)) -->
+<!--   )) -->
+
+<!-- p1 = ggplot(estimates2,aes(x=value,colour=param))+geom_density(show.legend = FALSE)+geom_vline(data=quants,mapping=aes(xintercept = value))+geom_text(data=quants,mapping=aes(x = value,label=q),y=Inf,hjust=1.1,vjust=1.1,angle=90, inherit.aes = FALSE)+facet_wrap(vars(param), scales = "free") -->
+
+<!-- p1 %>% standardPrintOutput::saveThirdPageFigure("~/Dropbox/covid19/serial-interval/FigS1_ParameterDistrbituions") -->
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- #tmp2 = si3$dfit$groupedDf %>% mutate( -->
+<!-- #  SL = as.integer(date_onset.infectee - date_onset.infector)) -->
+
+<!-- #panel1 = ggplot(tmp2) + geom_bar(width=0.7,aes(x=SL)) + xlab("days") -->
+
+<!-- # tmp2 = ff100 %>% mutate( -->
+<!-- #   EL = 0L,  -->
+<!-- #   ER = as.integer(date_exposure_last - date_exposure_first), -->
+<!-- #   SL = as.integer(date_onset - date_exposure_first), -->
+<!-- #   SR = as.integer(date_onset - date_exposure_first+1), -->
+<!-- #   type=0L) %>% mutate(ER = ifelse(ER>SL,SL,ER)) %>% select(EL,ER,SL,SR,type) %>% filter(SL>0) -->
+<!-- # tmp3 = as.matrix(tmp2[,c("EL","ER","SL","SR","type")]) -->
+
+<!-- # tmp2 = tmp2 %>% filter(SL>0) -->
+<!-- # tmp3 = as.matrix(tmp2[,c("EL","ER","SL","SR","type")]) -->
+<!-- #  -->
+<!-- # MCMC_seed <- 1 -->
+<!-- # overall_seed <- 2 -->
+<!-- # mcmc_control <- EpiEstim::make_mcmc_control(seed = MCMC_seed,  -->
+<!-- #                                   burnin = 1000) -->
+<!-- # dist <- "G" # fitting a Gamma dsitribution for the SI -->
+<!-- # config <- EpiEstim::make_config(list(si_parametric_distr = dist, -->
+<!-- #                            mcmc_control = mcmc_control, -->
+<!-- #                            seed = overall_seed,  -->
+<!-- #                            n1 = 50,  -->
+<!-- #                            n2 = 50)) -->
+<!-- #  -->
+<!-- # # rm(`%in%`) = function(x,y) { -->
+<!-- # #   return(sapply(x, function(x1) {any(y == x1)})) -->
+<!-- # # } -->
+<!-- #  -->
+<!-- # ## first estimate the SI distribution using function dic.fit.mcmc fron  -->
+<!-- # ## coarseDataTools package: -->
+<!-- # n_mcmc_samples <- config$n1*mcmc_control$thin -->
+<!-- #  -->
+<!-- # SI_fit = coarseDataTools::dic.fit.mcmc(dat = tmp3, -->
+<!-- #                   dist = "G",#off1G", -->
+<!-- #                   init.pars = EpiEstim::init_mcmc_params(tmp2, dist), -->
+<!-- #                   burnin = mcmc_control$burnin, -->
+<!-- #                   n.samples = n_mcmc_samples, -->
+<!-- #                   seed = mcmc_control$seed) -->
+<!-- #  -->
+<!-- # si_sample <- EpiEstim::coarse2estim(SI_fit, thin = mcmc_control$thin)$si_sample -->
+<!-- #  -->
+<!-- # calcGammaMean = function(x) { -->
+<!-- #   shape = SI_fit@ests["shape",x] -->
+<!-- #   scale = SI_fit@ests["scale",x] -->
+<!-- #   out = list() -->
+<!-- #   out$mean = shape*scale -->
+<!-- #   out$sd = sqrt(shape*scale^2) -->
+<!-- #   return(out) -->
+<!-- # } -->
+<!-- #  -->
+<!-- # UKSIConfig = EpiEstim::make_config( -->
+<!-- #   mean_si = calcGammaMean("est")[["mean"]], -->
+<!-- #   std_si = calcGammaMean("est")[["sd"]], -->
+<!-- #   min_mean_si = calcGammaMean("CIlow")[["mean"]], -->
+<!-- #   min_std_si = calcGammaMean("CIlow")[["sd"]], -->
+<!-- #   max_mean_si = calcGammaMean("CIhigh")[["mean"]], -->
+<!-- #   max_std_si = calcGammaMean("CIhigh")[["sd"]], -->
+<!-- #   #TODO: the following are not going to be used unless we apply this -->
+<!-- #   std_mean_si = (calcGammaMean("CIhigh")[["mean"]]-calcGammaMean("CIlow")[["mean"]])/3.96,  -->
+<!-- #   std_std_si = (calcGammaMean("CIhigh")[["sd"]]-calcGammaMean("CIlow")[["sd"]])/3.96, -->
+<!-- #   method = "uncertain_si" -->
+<!-- # ) -->
+<!-- #  -->
+<!-- # gammaMean = sprintf("%1.2f (%1.2f-%1.2f)", -->
+<!-- #   calcGammaMean("est")[["mean"]], -->
+<!-- #   calcGammaMean("CIlow")[["mean"]], -->
+<!-- #   calcGammaMean("CIhigh")[["mean"]] -->
+<!-- # ) -->
+<!-- #  -->
+<!-- # gammaShape = sprintf("%1.2f (%1.2f-%1.2f)", -->
+<!-- #   SI_fit@ests["shape","est"], -->
+<!-- #   SI_fit@ests["shape","CIlow"], -->
+<!-- #   SI_fit@ests["shape","CIhigh"] -->
+<!-- # ) -->
+<!-- #  -->
+<!-- # gammaScale = sprintf("%1.2f (%1.2f-%1.2f)", -->
+<!-- #   SI_fit@ests["scale","est"], -->
+<!-- #   SI_fit@ests["scale","CIlow"], -->
+<!-- #   SI_fit@ests["scale","CIhigh"] -->
+<!-- # ) -->
+<!-- #  -->
+<!-- # gammaSd = sprintf("%1.2f (%1.2f-%1.2f)", -->
+<!-- #   calcGammaMean("est")[["sd"]], -->
+<!-- #   calcGammaMean("CIlow")[["sd"]], -->
+<!-- #   calcGammaMean("CIhigh")[["sd"]] -->
+<!-- # ) -->
+<!-- #  -->
+<!-- # panel2 = (ggplot(tmp2, aes(x=SL)) + geom_histogram(aes(y=..density..),fill=NA,colour = "black", binwidth=1)+ #,width=0.7) + -->
+<!-- #     geom_line(data = tibble( -->
+<!-- #       x=seq(0,10,length.out = 101), -->
+<!-- #       y=dgamma(seq(0,10,length.out = 101), shape = SI_fit@ests["shape","est"], scale = SI_fit@ests["scale","est"]) -->
+<!-- #     ), aes(x=x,y=y), inherit.aes = FALSE, colour="blue")+ -->
+<!-- #     geom_line(data = tibble( -->
+<!-- #       x=seq(0,10,length.out = 101), -->
+<!-- #       y=dgamma(seq(0,10,length.out = 101), shape = SI_fit@ests["shape","CIlow"], scale = SI_fit@ests["scale","CIlow"]) -->
+<!-- #     ), aes(x=x,y=y), inherit.aes = FALSE, colour="blue",linetype="dashed")+ -->
+<!-- #     geom_line(data = tibble( -->
+<!-- #       x=seq(0,10,length.out = 101), -->
+<!-- #       y=dgamma(seq(0,10,length.out = 101), shape = SI_fit@ests["shape","CIhigh"], scale = SI_fit@ests["scale","CIhigh"]) -->
+<!-- #     ), aes(x=x,y=y), inherit.aes = FALSE, colour="blue",linetype="dashed")+ -->
+<!-- #     annotate("text", x = 10, y = 0.5, label = paste0("Mean: ",gammaMean,"\nSD: ",gammaSd,"\nShape: ",gammaShape,"\nScale: ",gammaScale),hjust="inward",vjust="inward")+ -->
+<!-- #     xlab("days") -->
+<!-- # )  -->
+<!-- ``` -->
+
+<!-- This used fitted distributions to do combination and has been replacedf by code using raw estimates. -->
+
+<!-- ```{r} -->
+
+<!-- # #glimpse(symptomaticToCaseModels %>% filter(aic == min(aic))) -->
+<!-- # # select best fit (by AIC) for days symptomatic to case. -->
+<!-- # # get 200 random samples for each bootstrap -->
+<!-- # # split into 2 groups and exclude any values with number of days > 30 -->
+<!-- # # calculate the difference -->
+<!-- #  -->
+<!-- # ### From infgection  -->
+<!-- # # onsetToTestFit$filterModels(aic == min(aic)) -->
+<!-- # # onsetToTestFit$generateSamples(sampleExpr = 2000) -->
+<!-- # fromInfectionDelay = function(distFit) { -->
+<!-- #   distFit2 = distFit$clone() -->
+<!-- #   distFit2$filterModels(aic == min(aic)) -->
+<!-- #   distFit2$generateSamples(sampleExpr = 2000) -->
+<!-- #  -->
+<!-- #    -->
+<!-- #   # get samples from distibution and split into 2 groups - one for index patient and one for affected patient -->
+<!-- #   distSamples = distFit2$samples %>% -->
+<!-- #     mutate(sampleCat = (sampleNumber-1) %/% 1000 + 1, sampleNumber = sampleNumber %% 1000) %>% -->
+<!-- #     pivot_wider(names_from = sampleCat, values_from = value, names_prefix = "delay") %>% -->
+<!-- #     mutate(to = stringr::str_replace(transition,"onset to ","")) -->
+<!-- #    -->
+<!-- #   # delay from infection -->
+<!-- #   # the join adds in incubation  -->
+<!-- #   delayDist = incubDist %>% select(-transition, -dist, -to) %>%  -->
+<!-- #     inner_join(distSamples, by=c("sampleNumber","bootstrapNumber")) %>%  -->
+<!-- #     mutate(from="infection") -->
+<!-- #   delayDist = delayDist %>% mutate(delayOffset = delay2+incub2-delay1) -->
+<!-- #    -->
+<!-- #   # delay from onset -->
+<!-- #   delayOnsetDist = distSamples %>% mutate(delayOffset = delay2-delay1, from="onset") -->
+<!-- #    -->
+<!-- #   return(delayDist %>% bind_rows(delayOnsetDist)) -->
+<!-- # } -->
+<!-- #  -->
+<!-- # relativeDelays = bind_rows( -->
+<!-- #   incubDist, -->
+<!-- #   onsetToTestFit %>% fromInfectionDelay(), -->
+<!-- #   onsetToAdmissionFit %>% fromInfectionDelay(), -->
+<!-- #   #onsetToTestResultFit %>% fromInfectionDelay(), -->
+<!-- #   onsetToDeathFit %>% fromInfectionDelay() -->
+<!-- # )  -->
+<!-- #  -->
+<!-- # # relative delays df here has distributions for a whole number of bootstraps. -->
+<!-- # # we could use this to fit models. and determine uncertainty on densitites. -->
+<!-- # # aggregating over all bootstraps and plotting all results as density.  -->
+<!-- #  -->
+<!-- # #ggplot(relativeDelays %>% filter(delayOffset > -25 & delayOffset < 25), aes(x=delayOffset, colour = transition, fill=transition))+geom_density(alpha = 0.1,show.legend = FALSE)+facet_wrap(vars(transition)) -->
+<!-- # ggplot(relativeDelays %>% filter(delayOffset > -45 & delayOffset < 45), aes(x=delayOffset, colour = to))+geom_density()+facet_wrap(vars(from)) -->
+
+<!-- ``` -->
+
+
+<!-- Hospital admission generally predates case detection in this data set as hospital based. No clear reason to treat case identification and hospital admission as different time points. -->
+
+
+<!-- ```{r} -->
+<!-- symptomaticToAdmission = CHESSClean %>% filter(age>10 & !is.na(estimateddateonset) & !is.na(hospitaladmissiondate)) %>%  -->
+<!--   srv$generateNoAgeSurvivalData( -->
+<!--     idVar = caseid, -->
+<!--     startDateVar = estimateddateonset,  -->
+<!--     endDateExpr = hospitaladmissiondate, -->
+<!--     statusExpr = 1, -->
+<!--     statusLabels = "admitted", -->
+<!--     censoredDateExpr = NA -->
+<!--   ) #%>% filter(time < 100 & time > 0) -->
+
+<!-- symptomaticToAdmission = symptomaticToAdmission %>% filter(time < 100 & time > 0) -->
+<!-- symptomaticToAdmissionModels = symptomaticToAdmission %>% srv$fitModels(models, shifted=1) -->
+<!-- symptomaticToAdmissionModels %>% srv$plotModels(symptomaticToAdmission) %>% standardPrintOutput::saveSixthPageFigure("~/Dropbox/covid19/serial-interval/FigS1_symptomaticToAdmission") -->
+<!-- symptomaticToAdmissionModels %>% mutate(valueCI = sprintf("%1.3f \U00B1 %1.3f (%1.3f; %1.3f)", mean, sd, lower, upper), loglik = max(loglik)) %>% ungroup() %>% select( -->
+<!--   `Distribution` = dist, -->
+<!--   `Log-likelihood` = loglik, -->
+<!--   `AIC` = aic, -->
+<!--   `Parameter` = param, -->
+<!--   `Value (95% CI)` = valueCI, -->
+<!-- ) %>% group_by(`Distribution`,`Log-likelihood`,`AIC`) %>% standardPrintOutput::saveTable("~/Dropbox/covid19/serial-interval/TableS1_symptomaticToAdmissionParams") -->
+
+<!-- ``` -->
+
+<!-- * Estimate gamma from MCMC -->
+
+<!-- ```{r} -->
+<!-- # minimal generation interval deconvolution -->
+<!-- # create samples from incubation period offset -->
+
+
+<!-- #sampleSize = si1$dfit$groupedDf %>% group_by(bootstrapNumber) %>% count() %>% pull(n) %>% max() -->
+<!-- sampleSize = nrow(si1$dfit$fitData) -->
+
+<!-- incub2Fit = lauerFit$clone() -->
+<!-- incub2Fit$bootstraps = incub2Fit$bootstraps %>% inner_join( -->
+<!--   si1$dfit$groupedDf %>% group_by(bootstrapNumber) %>% count(), -->
+<!--   by = "bootstrapNumber" -->
+<!--   ) -->
+<!-- incub2Fit$generateSamples(sampleExpr = n * 2) -->
+<!-- incub2Samples = incub2Fit$samples %>% filter(dist == "lnorm") %>% -->
+<!--     mutate(sampleCat = sampleNumber %% 2 + 1, sampleNumber = (sampleNumber+1) %/% 2) %>% -->
+<!--     pivot_wider(names_from = sampleCat, values_from = value, names_prefix = "delay") %>% -->
+<!--     mutate(delay = delay2-delay1) -->
+
+<!-- # get the  -->
+<!-- ordered = incub2Samples %>% group_by(bootstrapNumber) %>% arrange(delay) %>% mutate(order=row_number()) -->
+
+
+<!-- tmp = si1$dfit$groupedDf %>% group_by(bootstrapNumber) %>% arrange(value) %>% mutate(order = row_number()) %>% inner_join(ordered, by=c("bootstrapNumber","order")) -->
+
+<!-- ggplot(tmp, aes(x=value-delay))+geom_density() -->
+<!-- #TODO: -->
+<!-- # a bootstrapping resampling which respect the fact that si1 value minus incubFit delay must be greater than zero. -->
+
+<!-- ``` -->
+<!-- ```{r} -->
+<!-- #reticulate::install_miniconda() -->
+<!-- #reticulate::conda_create("r-tensorflow", packages=c("python=3.7","tensorflow=1.14","pyyaml","requests","Pillow","pip","numpy=1.16")) -->
+<!-- reticulate::use_condaenv(condaenv = 'r-tensorflow', required = TRUE) -->
+<!-- #reticulate::py_install("tensorflow-probability=0.7", "r-tensorflow") -->
+
+<!-- # variables & priors -->
+<!-- #mean <- greta::uniform(0,10) # -->
+
+<!-- dof = 5 -->
+
+<!-- sd <- greta::gamma(rate = 1/2, shape = dof/2) -->
+<!-- sdOfMean   <- greta::cauchy(0, 3, truncation = c(0, Inf)) -->
+<!-- mean = greta::normal(mean=si1$dfit$groupedDf$value, sd=10, truncation = c(0, Inf)) -->
+
+<!-- genInterval <- greta::gamma(shape = mean^2/sd^2, rate=mean/sd^2) -->
+
+<!-- pt1Delay <- greta::lognormal( -->
+<!--   meanlog = lauerFit$fittedModels %>% filter(dist=="lnorm" & param=="meanlog") %>% pull(mean), -->
+<!--   sdlog = lauerFit$fittedModels %>% filter(dist=="lnorm" & param=="sdlog") %>% pull(mean) -->
+<!-- ) -->
+
+<!-- pt2Delay <- greta::lognormal( -->
+<!--   meanlog = lauerFit$fittedModels %>% filter(dist=="lnorm" & param=="meanlog") %>% pull(mean), -->
+<!--   sdlog = lauerFit$fittedModels %>% filter(dist=="lnorm" & param=="sdlog") %>% pull(mean) -->
+<!-- ) -->
+
+<!-- # linear predictor -->
+<!-- mu <- genInterval + pt1Delay - pt2Delay -->
+
+<!-- # observation model -->
+<!-- greta::distribution(si1$dfit$groupedDf$value) <- greta::normal(mu,sdOfMean) -->
+
+<!-- #m <- greta::model(mean, sd, sdOfMean) -->
+<!-- m <- greta::model(mean, sd, sdOfMean) -->
+<!-- draws <- greta::mcmc(m, n_samples = 2000, chains = 4) -->
+<!-- bayesplot::mcmc_trace(draws) -->
+<!-- summary(draws) -->
+
+<!-- ``` -->
+
+<!-- 
+#TODO: convert this to stan 
+# DECONVOLUTION: https://stackoverflow.com/questions/12462919/deconvolution-with-r-decon-and-deamer-package
+# https://www.rdocumentation.org/packages/surveillance/versions/1.12.1/topics/backprojNP
+deamer / decon
+-->
+
+
+
+
+
+
+
+<!-- ```{r skip=TRUE} -->
+<!-- #TODO: from Lauer's original data -->
+
+<!-- # Reconstruct serial interval -->
+<!-- # https://www.acpjournals.org/doi/10.7326/M20-0504#t4-M200504 -->
+<!-- # Original data here: https://github.com/HopkinsIDD/ncov_incubation/tree/master/data -->
+<!-- # Lauer incubation periods -->
+<!-- lauerIncub = tibble::tribble( -->
+<!--   ~dist, ~param, ~paramValue, -->
+<!--   "lnorm","meanlog","1.621 (1.504–1.755)", -->
+<!--   "lnorm","sdlog","0.418 (0.271–0.542)", -->
+<!--   "gamma", "shape", "5.807 (3.585–13.865)",  -->
+<!--   "gamma", "scale", "0.948 (0.368–1.696)", -->
+<!--   "weibull", "shape", "2.453 (1.917–4.171)",  -->
+<!--   "weibull", "scale", "6.258 (5.355–7.260)", -->
+<!-- #  "erlang", "shape", "6 (3–11)", -->
+<!-- #  "erlang", "scale", "0.880 (0.484–1.895)" -->
+<!-- ) -->
+
+<!-- lauerIncub = lauerIncub %>% mutate( -->
+<!--   paramValueList = lapply(stringr::str_extract_all(paramValue, "[0-9]+\\.?[0-9]*"),as.numeric) -->
+<!-- ) %>% mutate( -->
+<!--   mean = map_dbl(paramValueList, ~.x[1]), -->
+<!--   lower = map_dbl(paramValueList, ~.x[2]), -->
+<!--   upper = map_dbl(paramValueList, ~.x[3]), -->
+<!--   sd = (upper-lower)/3.96 # THIS ASSUMPTION IS WHAT CAUSES DIFFERENCE IN PUBLISHED AND BOOTSTRAPPED MEANS AND RESULTS IN RESAMPLING -->
+<!-- ) -->
+
+<!-- lauerFit = DistributionFit$new(distributions = unique(lauerIncub$dist)) -->
+
+<!-- lauerIncub %>% group_by(dist) %>% group_map(function(d,g,...) { -->
+<!--   lauerFit$withSingleDistribution(dist = g$dist,paramDf = d %>% select(param,mean,sd,lower,upper),bootstraps = 1000) -->
+<!--   return(NULL) -->
+<!-- }) #%>% invisible() -->
+
+<!-- # From original data -->
+
+<!-- lauerRaw = readr::read_csv("https://raw.githubusercontent.com/HopkinsIDD/ncov_incubation/master/data/nCoV-IDD-traveler-data.csv") -->
+<!-- for (col in c("ER","EL","SL","SR","PR")) { -->
+<!--   col = as.symbol(col) -->
+<!--   lauerRaw = lauerRaw %>% mutate(!!col := as.numeric(as.Date(stringr::str_extract(!!col,"[0-9]{4}-[0-9]{2}-[0-9]{2}")))) -->
+<!-- } -->
+<!-- lauerRaw = lauerRaw %>% mutate(type = 0L, -->
+<!--   ER=ER+1,   -->
+<!--   SR=SR+1 -->
+<!-- ) -->
+
+<!-- assumedEarliest = as.numeric(as.Date("2019-12-01")) -->
+<!-- #https://github.com/HopkinsIDD/ncov_incubation/blob/master/manuscript/nCoV_Incubation.Rmd -->
+<!-- lauerRawProc <- lauerRaw %>%  -->
+<!--              # if EL is missing or before 1 Dec 2019, use 1 Dec 2019 -->
+<!--              mutate( -->
+<!--                EL = ifelse(is.na(EL) | EL < assumedEarliest, assumedEarliest, EL), -->
+<!--                # if SR is missing, use PR -->
+<!--                SR = ifelse(is.na(SR), PR, SR), -->
+<!--                # if ER is missing, use SR; if SL is missing, use EL -->
+<!--                ER=if_else(is.na(ER) | ER>SR, SR, ER), -->
+<!--                SL=if_else(is.na(SL) | SL<EL, EL, SL) -->
+<!--              ) -->
+<!-- lauerRawProc = lauerRawProc %>% mutate( -->
+<!--     EL = EL-assumedEarliest, -->
+<!--     ER = ER-assumedEarliest, -->
+<!--     SL = SL-assumedEarliest, -->
+<!--     SR = SR-assumedEarliest, -->
+<!--     E_int=ER-EL, -->
+<!--     S_int=SR-SL -->
+<!--   ) %>% -->
+<!--     # any entries missing EL, ER, SL, or SR -->
+<!--   filter( -->
+<!--     !is.na(EL) & !is.na(ER) & !is.na(SL) & !is.na(SR) -->
+<!--   ) %>%  -->
+<!--     # remove entries that haven't been reviewed by two people -->
+<!--   filter(!is.na(REVIEWER2), REVIEWER2!="NA") %>%  -->
+<!--     # remove entries with exposure/onset intervals less than 0 -->
+<!--     # remove entries where ER greater than SR or EL greater than SL -->
+<!--   filter(E_int > 0, S_int > 0, ER<=SR, SL>=EL) %>% -->
+<!--   mutate(type=0L) %>% -->
+<!--   select(ER,EL,SR,SL,type) -->
+
+<!-- tmp3 = as.matrix(lauerRawProc[,c("EL","ER","SL","SR","type")]) -->
+
+<!-- ## estimate the SI distribution using function dic.fit.mcmc fron  -->
+<!-- ## coarseDataTools package: -->
+<!-- # n_mcmc_samples <- config$n1*mcmc_control$thin -->
+<!-- #  -->
+<!-- SI_fit = coarseDataTools::dic.fit(dat = tmp3, -->
+<!--                    dist = "G", -->
+<!--                    n.boots = 50) -->
+
+<!-- # fitdistrplus -->
+<!-- lauerRaw = lauerRaw %>% mutate( -->
+<!--   left = pmin(SL,SR,na.rm = TRUE)-(EL+ER)/2, -->
+<!--   right = pmin(SL,SR,na.rm = TRUE)-(EL+ER)/2, -->
+<!--   ) %>% mutate( -->
+<!--     left = ifelse(left < 0 | is.na(left) , 0 ,left), -->
+<!--     right = ifelse(right < 0 , 0 ,right) -->
+<!--   ) %>% filter(!(is.na(left) & is.na(right))) -->
+
+<!-- lauerRawFit = DistributionFit$new(c("lnorm","gamma","nbinom","weibull")) -->
+<!-- lauerRawFit$fromCensoredData(lauerRaw, lowerValueExpr = left, upperValueExpr = right) -->
+<!-- lauerRawFit$printDistributionSummary() -->
+<!-- ``` -->
+
+
+
+<!-- ```{r} -->
+<!-- onsetToTestResult = CHESSClean %>%  -->
+<!--     filter(age>10 & !is.na(estimateddateonset) & !is.na(labtestdate)) %>%  -->
+<!--     mutate( -->
+<!--       transition = "onset to test result", -->
+<!--       time = as.integer(labtestdate - estimateddateonset) -->
+<!--     ) %>% select(caseid,transition,time) %>% filter(time < 28 & time > -14) %>% group_by(transition) -->
+
+<!-- onsetToTestResultFit = DistributionFit$new(distributions = c("lnorm","gamma","weibull","nbinom"))$fromUncensoredData(onsetToTestResult, valueExpr = time, truncate = TRUE, bootstraps = 100) -->
+<!-- plots$onsetToTestResult = onsetToTestResultFit$plot(xlim = c(0,20))+xlab("time delay") -->
+<!-- tables$onsetToTestResult = onsetToTestResultFit$printDistributionDetail() -->
+<!-- ``` -->
+
+
+<!-- * Test to admission -->
+<!-- * Potentially complex as admission may occur before test comes back positive. -->
+<!-- * Also issues with hospital acquired infections. -->
+<!-- * Assume admission before 14 days is unrelated. cap at 100. -->
+
+<!-- ```{r} -->
+<!--   # Swab positive to admission -->
+<!-- testToAdmission = CHESSClean %>%  -->
+<!--     filter(age>10 & !is.na(infectionswabdate) & !is.na(hospitaladmissiondate)) %>%  -->
+<!--     mutate( -->
+<!--       transition = "test to admission", -->
+<!--       time = as.integer(hospitaladmissiondate - infectionswabdate) -->
+<!--     ) %>% select(caseid,transition,time) %>% filter(time < 100 & time > -14) -->
+<!-- testToAdmissionFit = DistributionFit$new(distributions = c("norm","lnorm","gamma","weibull","exp"))$fromUncensoredData(testToAdmission, valueExpr = time, truncate = TRUE, bootstraps = 100) -->
+<!-- testToAdmissionFit$plot(xlim = c(-14,25)) -->
+<!-- testToAdmissionFit$printDistributionDetail() -->
+<!-- ``` -->
+
+<!-- ## Impact of delays on serial interval / Serial interval adjustments for non onset data -->
+
+<!-- * Time delay of estimate of R_t depends on incubation period -->
+<!-- * What is impact of these delay distributions on estimating R_t using the serial interval?  -->
+<!-- * We look at: -->
+<!-- * serial interval onset-onset + delay observation infectee - delay observation infector -->
+<!-- * These can be though of as error functions, applied to serial interval distribution to produce serial interval distribution between deaths or admissions, or cases. -->
+<!-- * We use our resampled SI estimates and chess delays -->
+
+<!-- ```{r} -->
+
+<!-- simulatedSI = rawDelay %>%  -->
+<!--   filter(from=="onset") %>%  -->
+<!--   group_by(from,to,bootstrapNumber) %>%  -->
+<!--   group_modify(function(d,g,...) { -->
+<!--     # each d here is a single bootstrap of delay from and to -->
+<!--     # grab a resampled serial interval bootstrap -->
+<!--     siEsts = si1$bootstrapSamples %>% filter(bootstrapNumber == g$bootstrapNumber) %>% pull(value) %>% sample(nrow(d)) -->
+<!--     d = d %>% mutate( -->
+<!--       siOriginal = siEsts, -->
+<!--       siTo = siEsts+delayOffset -->
+<!--     ) -->
+<!--     return(d) -->
+<!--   }) %>%   -->
+<!--   select(between = to,bootstrapNumber,siOriginal,siTo,delayOffset) %>% -->
+<!--   bind_rows( -->
+<!--     si1$dfit$groupedDf %>% mutate( -->
+<!--       between = "onset", -->
+<!--       siOriginal = value, -->
+<!--       siTo = value, -->
+<!--       delayOffset = 0 -->
+<!--     ) %>% select(-value) -->
+<!--   ) -->
+
+<!-- ``` -->
+
+
+<!-- ```{r fig7} -->
+
+<!-- simulatedSIFit  = DistributionFit$new(c("norm","gamma","nbinom")) -->
+
+<!-- simulatedSIFit$fromBootstrappedData(simulatedSI %>% group_by(between) %>% select(bootstrapNumber,siTo), valueExpr = siTo, method="mge") #method="qme", probs=seq(0.4,0.6,by = 0.02)) -->
+<!-- fig7 = simulatedSIFit$plot(xlim=c(-7,28))+xlab("Time interval") -->
+<!-- fig7 %>% saveHalfPageFigure("~/Dropbox/covid19/serial-interval/Fig7_TimeIntervalDistributionsBetweenObservation") -->
+<!-- ``` -->
+
+<!-- `r cap$fig("observation-interval","Time intervals between infector-infectee observations")` -->
+
+<!-- * Negative values for time intervals create poor gamma fit. -->
+<!-- * Source of bias when considering estimating R_t using observations other than onset (and since onset is typically not reported this means all). -->
+<!-- * EpiEstim assumes serial interval is >0 -->
+<!-- * Gostic et al. suggest approach in deconvolution / generation interval. No good estimates of generation interval exist - can be derived by deconvolution of serial interval -->
+<!-- * Assumption that serial interval >0 can be addressed in EpiEstim -->
+<!-- * Quantification of bias -->
+<!-- * ALternative approach is to use time interval between observations in lieu of SI  -->
+<!-- * Use truncated normal distributions to model -->
+<!-- * Understand that fraction of contributors to observed eventare not included in estimate -->
+
+<!-- `r cap$tab("trunc-norm","Truncated normal parametrisation of serial observation interval distributions for different observations")` -->
+
+<!-- ```{r table3} -->
+
+<!-- # thinking here about -->
+<!-- # tmp = simulatedSI %>% group_by(between,bootstrapNumber) %>% summarise( -->
+<!-- #   negativeFrac = sum(ifelse(siTo < 1,1,0))/n(), -->
+<!-- #   positiveFrac = sum(ifelse(siTo >= 1,1,0))/n(), -->
+<!-- #   mean1 = mean(siTo), -->
+<!-- #   sd1 = sd(siTo) -->
+<!-- # ) %>% group_by(between) %>% summarise( -->
+<!-- #   tibble( -->
+<!-- #     param = c("positive fraction","negative fraction","mean","sd"), -->
+<!-- #     mean = c(mean(positiveFrac),mean(negativeFrac),mean(mean1),mean(sd1)), -->
+<!-- #     sd = c(sd(positiveFrac),sd(negativeFrac),sd(mean1),sd(sd1)), -->
+<!-- #     lower = c(quantile(positiveFrac,0.025),quantile(negativeFrac,0.025),quantile(mean1,0.025),quantile(sd1,0.025)), -->
+<!-- #     upper = c(quantile(positiveFrac,0.975),quantile(negativeFrac,0.975),quantile(mean1,0.975),quantile(sd1,0.975)) -->
+<!-- #   ) -->
+<!-- # ) -->
+
+<!-- truncNorm = simulatedSI %>% group_by(between,bootstrapNumber) %>% summarise( -->
+<!--   mean1 = mean(siTo), -->
+<!--   sd1 = sd(siTo) -->
+<!-- ) %>% group_by(between) %>% summarise( -->
+<!--   meanOfMean = mean(mean1), -->
+<!--   sdOfMean =sd(mean1), -->
+<!--   lowerOfMean = quantile(mean1,0.025), -->
+<!--   upperOfMean = quantile(mean1,0.975), -->
+<!--   meanOfSd = mean(sd1), -->
+<!--   sdOfSd =sd(sd1), -->
+<!--   lowerOfSd = quantile(sd1,0.025), -->
+<!--   upperOfSd = quantile(sd1,0.975), -->
+<!-- ) %>% mutate( -->
+<!--   `Mode (95% CI)` = sprintf("%1.2f (%1.2f; %1.2f)",meanOfMean,lowerOfMean,upperOfMean), -->
+<!--   `SD (95% CI)` = sprintf("%1.2f (%1.2f; %1.2f)",meanOfSd,lowerOfSd,upperOfSd), -->
+<!-- )  -->
+<!-- truncNorm %>% write.csv(file=paste0(dpc$directory,"/","OBSERVATION_INTERVAL_TRUNC_NORM.csv")) -->
+<!-- ukCovidObservationIntervals = truncNorm -->
+<!-- usethis::use_data(ukCovidObservationIntervals, overwrite = TRUE) -->
+
+<!-- truncNorm %>% arrange(meanOfSd) %>% select(Observation=between,`Mode (95% CI)`,`SD (95% CI)`) %>%  -->
+<!--   standardPrintOutput::saveTable("~/Dropbox/covid19/serial-interval/Table3_TruncatedNormal") -->
+
+
+<!-- si4 = SerialIntervalProvider$truncatedNormals(dpc) -->
+
+<!-- ``` -->
+
+<!-- * Negative values of time interval between observations not accounted for in EpiEstim. -->
+<!-- * We should anticipate this biases results using this estimation method as fraction of cases contributing to current obseved numbers of e.g. deaths have not themselves been observed.  -->
+<!-- * Underestimates number of infectors, therefore overestimates *R~t~*. Size of overestimate depends on fraction of negative serial interval -->
+<!-- * Also depends on dynamics of infection - will tend to overestimate *R~t~* in situation where infection numbers rising, and get more accurate when infection numbers falling rapidly. -->
+<!-- * Shorter timescales show less effect. -->
+
+<!-- `r cap$tab("correction","Proportion of serial observation interval that is negative")` -->
+
+<!-- ```{r table4} -->
+
+<!-- corrFac = simulatedSIFit$calculateCumulativeDistributions(q = 0) %>%  -->
+<!--   filter(dist == "norm") %>% arrange(Mean.cumulative) %>% -->
+<!--   mutate( -->
+<!--     `Proportion negative SI (95% CI)` = sprintf("%1.2f (%1.2f; %1.2f)",Mean.cumulative, Quantile.0.025.cumulative, Quantile.0.975.cumulative), -->
+<!--     `Naive correction factor` = sprintf("%1.2f",1-Mean.cumulative), -->
+<!--   ) %>% -->
+<!--   ungroup() %>% -->
+<!--   select(`Time intervals between` = between, `Proportion negative SI (95% CI)`,`Naive correction factor`) -->
+<!-- corrFac %>% standardPrintOutput::saveTable("~/Dropbox/covid19/serial-interval/Table4_CorrectionFactor") -->
+<!-- ukCovidCorrectionFactor = corrFac -->
+<!-- usethis::use_data(ukCovidCorrectionFactor, overwrite = TRUE) -->
+<!-- ``` -->
+
+
+
+<!-- ```{r} -->
+
+<!-- ff100ts = ukts %>% tsp$estimateRt(quick=FALSE, serialIntervalProvider=si3) %>% tsp$adjustRtDates(window = 0) -->
+<!-- resampledTs = ukts %>% tsp$estimateRt(quick=FALSE, serialIntervalProvider=si1) %>% tsp$adjustRtDates(window = 0,) -->
+<!-- midmarketTs = ukts %>% tsp$estimateRt(quick=FALSE, serialIntervalProvider=si2) %>% tsp$adjustRtDates(window = 0) -->
+<!-- truncNormTs = ukts %>% tsp$estimateRtWithAssumptions(quick=FALSE, serialIntervalProvider=si4) #%>% tsp$adjustRtDates() #%>% tsp$adjustRtCorrFac() #%>% tsp$adjustRtCorrFac()  -->
+
+<!-- tmp = bind_rows( -->
+<!--   ff100ts %>% mutate(source = "ff100"), -->
+<!--   resampledTs %>% mutate(source = "resampled"), -->
+<!--   midmarketTs %>% mutate(source = "midmarket"), -->
+<!--   #truncNormTs %>% mutate(source = "truncated normals") -->
+<!-- ) -->
+
+
+
+<!-- tmp %>% filter(statistic == "case") %>% tsp$plotRt(colour = source,events = events)+scale_color_brewer(palette = "Set1",guide="none")+facet_wrap(vars(source),ncol = 1) -->
+
+
+<!-- ``` -->
+
+<!-- * Use empirical resampled distribution of the serial interval and Lauer's estimates of the incubation period to estimate a distribution for the generation interval --> -->
+<!-- * THis is a deconvolution where difference of incubation period is error function -->
+
+<!-- ```{r} -->
+<!-- generationInterval = si1$bootstrapSamples %>% group_by(bootstrapNumber) %>% group_modify(function(d,g,...) { -->
+<!--   message(".",appendLF = FALSE) -->
+<!--   errors = incubDist %>% filter(from=="infection" & to =="onset" & bootstrapNumber==g$bootstrapNumber) %>% pull(delayOffset) -->
+<!--   tmp = deamer::deamerSE( -->
+<!--     y = d$value+runif(length(d$value),-0.5,0.5),  -->
+<!--     errors = errors, from = 0, to = 21, grid.length = 22) -->
+<!--   return(tibble( -->
+<!--     density = as.vector(tmp$f), -->
+<!--     x = tmp$supp -->
+<!--   )) -->
+<!-- }) -->
+
+
+<!-- pltGenInt = generationInterval %>% group_by(x) %>% summarise( -->
+<!--   y = mean(density), -->
+<!--   ymin1 = quantile(density,0.025), -->
+<!--   ymax1 = quantile(density,0.975), -->
+<!--   ymin2 = quantile(density,0.25), -->
+<!--   ymax2 = quantile(density,0.75) -->
+<!-- ) -->
+
+<!-- ggplot(pltGenInt,aes(x=x,y=y))+ -->
+<!--   geom_line()+ -->
+<!--   geom_ribbon(aes(ymin=ymin1,ymax=ymax1),alpha=0.1)+ -->
+<!--   geom_ribbon(aes(ymin=ymin2,ymax=ymax2),alpha=0.15) -->
+
+<!-- summary = generationInterval %>% group_by(bootstrapNumber) %>% mutate( -->
+<!--   mean1 = sum(x * density) -->
+<!--   ) %>% summarise( -->
+<!--     mean1 = first(mean1), -->
+<!--     sd1 = sqrt((x-mean1)^2 * generationInterval$density) -->
+<!--   ) %>% ungroup() %>% -->
+<!--   summarise( -->
+<!--     meanOfMean = mean(mean1), -->
+<!--     sdOfMean = sd(mean1), -->
+<!--     lowerOfMean = quantile(mean1,0.025), -->
+<!--     upperOfMean = quantile(mean1,0.975), -->
+<!--     meanOfSd = mean(sd1), -->
+<!--     sdOfSd = sd(sd1), -->
+<!--     lowerOfSd = quantile(sd1,0.025), -->
+<!--     upperOfSd = quantile(sd1,0.975), -->
+<!--   ) %>%  -->
+<!--   mutate( -->
+<!--     `Mean \U00B1 SD and 95% CI` = sprintf("%1.2f \U00B1 %1.2f (%1.2f; %1.2f)",meanOfMean, sdOfMean, lowerOfMean, upperOfMean), -->
+<!--     `SD \U00B1 SD and 95% CI` = sprintf("%1.2f \U00B1 %1.2f (%1.2f; %1.2f)",meanOfSd, sdOfSd, lowerOfSd, upperOfSd) -->
+<!--   ) -->
+
+<!-- ``` -->
+<!-- ## With an offset parameter ---- -->
+<!-- # TODO: to make this work properly we need to implement an offset gamma probability distribution family. -->
+
+<!-- # estimateParams = function(errors,predicted) { -->
+<!-- #    -->
+<!-- #   gridSearch = function(shapeLim=c(0.1,5),rateLim=c(0.1,15),offsetLim=c(0,4), grid = NULL) { -->
+<!-- #     #browser() -->
+<!-- #     shapeWidth=(shapeLim[2]-shapeLim[1])/10 -->
+<!-- #     rateWidth=(rateLim[2]-rateLim[1])/10 -->
+<!-- #     offsetWidth=(offsetLim[2]-offsetLim[1])/10 -->
+<!-- #     if(shapeWidth<0.0001) return(grid) -->
+<!-- #     for(shape in seq(shapeLim[1]+shapeWidth,shapeLim[2]-shapeWidth,length.out = 5)) { -->
+<!-- #       for(rate in seq(rateLim[1]+rateWidth,rateLim[2]-rateWidth,length.out = 5)) { -->
+<!-- #         for(offset in seq(offsetLim[1]+offsetWidth,offsetLim[2]-offsetWidth,length.out = 5)) { -->
+<!-- #           grid = grid %>% bind_rows( -->
+<!-- #             tibble( -->
+<!-- #               offset=offset, -->
+<!-- #               shape=shape, -->
+<!-- #               rate=rate, -->
+<!-- #               mlse=simSi(shape=shape,rate=rate,offset=offset,errorVec=errors,predicted=predicted) -->
+<!-- #             ) -->
+<!-- #           ) -->
+<!-- #         }   -->
+<!-- #       } -->
+<!-- #     } -->
+<!-- #     gridmin = grid %>% filter(mlse==min(mlse)) -->
+<!-- #     grid = gridmin %>% group_modify(function(d,g,..) { -->
+<!-- #       return(gridSearch( -->
+<!-- #         d$shape+c(-1,1)*shapeWidth, -->
+<!-- #         d$rate+c(-1,1)*rateWidth, -->
+<!-- #         d$offset+c(-1,1)*offsetWidth, -->
+<!-- #         grid -->
+<!-- #       )) -->
+<!-- #     }) -->
+<!-- #     return(grid %>% distinct()) -->
+<!-- #   } -->
+<!-- #    -->
+<!-- #   return(gridSearch() %>% filter(mlse == min(mlse))) -->
+<!-- # } -->
+<!-- #  -->
+<!-- # genInt2 = dpc$getHashCached(object = incubDist,operation = "GENERATION-INTERVAL-WITH-OFFSET",params = list(empiricalSis), orElse = function(...) { -->
+<!-- #   return( -->
+<!-- #     incubDist %>% group_by(bootstrapNumber) %>% group_modify(function(d,g,...) { -->
+<!-- #         #browser() -->
+<!-- #         errors = d$incubError -->
+<!-- #         actual = empiricalSis %>% filter(bootstrapNumber==g$bootstrapNumber) -->
+<!-- #         message(".",appendLF = FALSE) -->
+<!-- #         return(estimateParams(errors=errors,predicted=actual$density)) -->
+<!-- #     }) -->
+<!-- #   ) -->
+<!-- # }) -->
+<!-- #  -->
+<!-- # genInt2 = genInt2 %>% mutate(mean = shape/rate+offset, sd = sqrt(shape/(rate^2))) -->
+<!-- #  -->
+<!-- # genInt2Fit = DistributionFit$new() -->
+<!-- # genInt2Tmp = genInt2 %>% select(bootstrapNumber,shape,rate) %>% pivot_longer(cols = c(shape,rate), names_to = "param", values_to = "value") %>% mutate(dist="gamma") -->
+<!-- # genInt2Fit$fromBootstrappedDistributions(fittedDistributions = genInt2Tmp) -->
+<!-- #  -->
+<!-- # genInt2Fit$shifted = -mean(genInt2$offset) -->
+
+
+<!-- ```{r} -->
+<!-- empiricalSis = si1$bootstrapSamples %>% -->
+<!--   group_by(bootstrapNumber) %>% -->
+<!--   group_modify(function(d,g,...) { -->
+<!--     tmp = density(d$value, from=-7, to=28,bw = 0.5) -->
+<!--     return(tibble(value = tmp$x, density = tmp$y)) -->
+<!--   }) -->
+
+<!-- # TODO: predicted is assumed here to be a density of length 512 e.g. from lines above. -->
+<!-- # could make this more generic and into an empirical probability distribution matching algorithm -->
+<!-- simSi = function(shape, rate, offset, errorVec, predicted) { -->
+<!--   #browser() -->
+<!--   N = length(errorVec) -->
+<!--   genSim = rgamma(N*100,shape,rate = rate)+offset+rep(errorVec,100) -->
+<!--   tmp = density(genSim, from=-7, to=28,bw = 0.5) -->
+<!--   return( -->
+<!--     #tibble(value=tmp$x, density = tmp$y) -->
+<!--     sqrt(mean((tmp$y - predicted)^2)) # this is RMSE - would log of RMSE be better? -->
+<!--     # TODO: match moments rather than distributions? -->
+<!--   ) -->
+<!-- } -->
+
+<!-- # For some reason the attempts to find these shape / rate / offset parameters fails -->
+<!-- # when using optim -->
+<!-- # # estimateParamsOptim = function(errors,actual) { -->
+<!-- # -->
+<!-- #   optimFunc = function(x) simSi(shape=x[1], rate=x[2], offset=x[3], errorVec = errors, predicted = actual) -->
+<!-- #   out = optim(par = c(2,2,2), fn = optimFunc, lower = c(0,0,0), method = "L-BFGS-B") -->
+<!-- #   TODO: assemble results into dataframe with shape, rate, offset. -->
+<!-- # } -->
+<!-- # this seems to hit local minima and get stuck -->
+<!-- # Or possibly the first derivative is not well defined as depending on rgamma with shape and rate -->
+<!-- # -->
+
+
+<!-- ## Without an offset parameter ---- -->
+
+<!-- estimateParamsNoOffset = function(errors,predicted) { -->
+
+<!--   gridSearch = function(shapeLim=c(0.1,5),rateLim=c(0.1,15), grid = NULL) { -->
+<!--     #browser() -->
+<!--     shapeWidth=(shapeLim[2]-shapeLim[1])/10 -->
+<!--     rateWidth=(rateLim[2]-rateLim[1])/10 -->
+<!--     if(shapeWidth<0.0001) return(grid) -->
+<!--     for(shape in seq(shapeLim[1]+shapeWidth,shapeLim[2]-shapeWidth,length.out = 5)) { -->
+<!--       for(rate in seq(rateLim[1]+rateWidth,rateLim[2]-rateWidth,length.out = 5)) { -->
+<!--         grid = grid %>% bind_rows( -->
+<!--           tibble( -->
+<!--             shape=shape, -->
+<!--             rate=rate, -->
+<!--             mlse=simSi(shape=shape,rate=rate,offset=0,errorVec=errors,predicted=predicted) -->
+<!--           ) -->
+<!--         ) -->
+<!--       } -->
+<!--     } -->
+<!--     gridmin = grid %>% filter(mlse==min(mlse)) -->
+<!--     grid = gridmin %>% group_modify(function(d,g,..) { -->
+<!--       return(gridSearch( -->
+<!--         d$shape+c(-1,1)*shapeWidth, -->
+<!--         d$rate+c(-1,1)*rateWidth, -->
+<!--         grid -->
+<!--       )) -->
+<!--     }) -->
+<!--     return(grid %>% distinct()) -->
+<!--   } -->
+
+<!--   return(gridSearch() %>% filter(mlse == min(mlse)) %>% mutate(offset=0)) -->
+<!-- } -->
+
+<!-- # errors = incubDist %>% filter(bootstrapNumber==8) %>% pull(incubError) -->
+<!-- # actual = empiricalSis %>% filter(bootstrapNumber==8) %>% pull(density) -->
+<!-- # tmp = estimateParams(errors=errors,predicted=actual) -->
+
+<!-- incubFit = bopFit$clone() -->
+<!-- incubFit$filterModels(aic == min(aic)) -->
+<!-- incubFit$bootstraps = incubFit$bootstraps %>% filter(bootstrapNumber <= 100) -->
+
+<!-- # generate a set of samples from best fitting incubation period distribution -->
+<!-- # get samples from incubation and split into 2 groups - one for index patient and one for affected patient -->
+<!-- incubFit$generateSamples(sampleExpr = 2000,seed = 101) -->
+<!-- incubSamples = incubFit$samples %>% -->
+<!--   mutate(sampleCat = (sampleNumber-1) %/% 1000 + 1, sampleNumber = ((sampleNumber-1) %% 1000)+1) %>% -->
+<!--   pivot_wider(names_from = sampleCat, values_from = value, names_prefix = "incub") -->
+<!-- incubDist = incubSamples %>% mutate(delayOffset = incub2, incubError = incub1-incub2, transition = "infection to onset", from="infection", to = "onset") -->
+
+<!-- genIntTmp = dpc$getHashCached(object = incubDist,operation = "GENERATION-INTERVAL-NO-OFFSET",params = list(empiricalSis), orElse = function(...) { -->
+<!--   genInt = -->
+<!--     incubDist %>% group_by(bootstrapNumber) %>% group_modify(function(d,g,...) { -->
+<!--       #browser() -->
+<!--       errors = d$incubError -->
+<!--       actual = empiricalSis %>% filter(bootstrapNumber==g$bootstrapNumber) -->
+<!--       message(".",appendLF = FALSE) -->
+<!--       return(estimateParamsNoOffset(errors=errors,predicted=actual$density)) -->
+<!--     }) -->
+<!--   genInt = genInt %>% mutate(mean = shape/rate, sd = sqrt(shape/(rate^2))) -->
+<!--   generationIntervalSimulation = genInt %>% select(bootstrapNumber,shape,rate) %>% pivot_longer(cols = c(shape,rate), names_to = "param", values_to = "value") %>% mutate(dist="gamma") -->
+<!--   usethis::use_data(generationIntervalSimulation, overwrite = TRUE) -->
+<!--   return(generationIntervalSimulation) -->
+<!-- }) -->
+
+<!-- si4 = SerialIntervalProvider$generationInterval(dpc,bootstrapsDf = genIntTmp) -->
+<!-- ``` -->
