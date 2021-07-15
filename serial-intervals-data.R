@@ -11,17 +11,17 @@ options("ukcovid.reproduce.at"=as.Date("2021-06-29"))
 serialIntervals = readxl::read_excel(here::here("input/serial-interval-literature.xlsx"))
 
 metaParams = cache$getSaved("SERIAL-INTERVAL-META", params=list(serialIntervals), orElse = function(...) {
-  tmp = serialIntervals %>% mutate(yi = mean_si_estimate, sei = (mean_si_estimate_high_ci-mean_si_estimate_low_ci)/3.92) %>% filter(!is.na(sei)) %>% filter(assumed_distribution == "gamma" & estimate_type %>% stringr::str_starts("serial"))
+  tmp = serialIntervals %>% mutate(yi = mean_si_estimate, sei = (mean_si_estimate_high_ci-mean_si_estimate_low_ci)/3.92) %>% filter(!is.na(sei)) %>% filter(assumed_distribution %in% c("gamma","lnorm","norm") & estimate_type %>% stringr::str_starts("serial"))
   meanfit = suppressWarnings(metaplus::metaplus(tmp$yi, tmp$sei, slab=tmp$label, random="mixture"))
       
-  tmp2 = serialIntervals %>% mutate(yi = std_si_estimate, sei = (std_si_estimate_high_ci-std_si_estimate_low_ci)/3.92) %>% filter(!is.na(sei)) %>% filter(assumed_distribution == "gamma" & estimate_type %>% stringr::str_starts("serial"))
+  tmp2 = serialIntervals %>% mutate(yi = std_si_estimate, sei = (std_si_estimate_high_ci-std_si_estimate_low_ci)/3.92) %>% filter(!is.na(sei)) %>% filter(assumed_distribution %in% c("gamma","lnorm","norm") & estimate_type %>% stringr::str_starts("serial"))
   sdfit = suppressWarnings(metaplus::metaplus(tmp2$yi, tmp2$sei, slab=tmp2$label, random="mixture"))
   
   serialIntervalMetaAnalysis = tribble(
     ~param, ~mean, ~sd, ~lower, ~upper,
     "mean", meanfit$results["muhat",1], NA, meanfit$results["muhat",2], meanfit$results["muhat",3],
     "sd", sdfit$results["muhat",1], NA, sdfit$results["muhat",2], sdfit$results["muhat",3]
-  ) %>% mutate(dist="gamma")
+  ) %>% mutate(dist="mixture")
   
   # save the data:
   save(serialIntervalMetaAnalysis, file = here::here("output/serialIntervalMetaAnalysis.rda"), compress = "bzip2", version = 2)
@@ -44,13 +44,13 @@ ff100dfit = cache$getSaved("SERIAL-INTERVAL-FF100",params=list(ff100), orElse = 
   
   if ("gamma" %in% dists) {
     dfit$models$gamma$start$shape = 1.1
-    dfit$models$gamma$lower$shape = 1
+    #dfit$models$gamma$lower$shape = 1
     dfit$models$gamma$support = c(.Machine$double.xmin,Inf)
   }
   
   if ("weibull" %in% dists) {
     dfit$models$weibull$start$shape = 1.1
-    dfit$models$weibull$lower$shape = 1
+    #dfit$models$weibull$lower$shape = 1
     dfit$models$weibull$support = c(.Machine$double.xmin,Inf)
   }
   
@@ -77,7 +77,7 @@ ff100dfit = cache$getSaved("SERIAL-INTERVAL-FF100",params=list(ff100), orElse = 
 })
 siFF100 = FittedSerialIntervalProvider$new(providerController = dpc,offset = 0,dfit = ff100dfit)
 
-resamples = cache$getSaved("SERIAL-INTERVAL-RESAMPLE-DATA", orElse = function() {
+resamples = cache$getSaved("SERIAL-INTERVAL-RESAMPLE-DATA", params=serialIntervals, orElse = function(...) {
 
   shortestCredibleSI = -7
   longestCredibleSI = 28
@@ -116,7 +116,6 @@ resamples = cache$getSaved("SERIAL-INTERVAL-RESAMPLE-DATA", orElse = function() 
   xuSrc = max(sampleDf$source)+1
   
   # bootstrapping 90% of total into 100 samples
-  N = length(xuSamples)*0.9
   set.seed(101)
   for(i in 1:samples) {
     # raw data also available from Du et al
@@ -125,8 +124,8 @@ resamples = cache$getSaved("SERIAL-INTERVAL-RESAMPLE-DATA", orElse = function() 
     # N.B. it is probably the same data as Xu
     sampleDf = sampleDf %>% bind_rows(tibble(
       bootstrapNumber = i, 
-      value = sample(xuSamples, size=N),
-      N = N,
+      value = sample(xuSamples, size=length(xuSamples), replace=TRUE),
+      N = length(xuSamples),
       source = xuSrc
     ))
   }
@@ -155,13 +154,13 @@ siResampleDfit = cache$getSaved("SERIAL-INTERVAL-RESAMPLED-FIT", params=list(res
   
   if ("gamma" %in% dists) {
     dfit$models$gamma$start$shape = 1.1
-    dfit$models$gamma$lower$shape = 1
+    #dfit$models$gamma$lower$shape = 1
     #dfit$models$gamma$support = c(0.01,Inf)
   }
   
   if ("weibull" %in% dists) {
     dfit$models$weibull$start$shape = 1.1
-    dfit$models$weibull$lower$shape = 1
+    #dfit$models$weibull$lower$shape = 1
     #dfit$models$weibull$support = c(0.01,Inf)
   }
   
@@ -216,16 +215,21 @@ latestdata2 = cache$getSaved("BOP-DATAFILE", params = list(bopUrl), orElse = fun
       travel.from = ifelse(is.na(travel.from),travel.to,travel.from),
       left = as.integer(date_onset_symptoms - travel.to)-0.5,
       right = as.integer(date_onset_symptoms - travel.from)+0.5
-    ) %>% filter(travel.to<date_onset_symptoms)
+    )
   return(latestdata2)
 })
+
+shortestCredibleIncubationPeriod = 0
+longestCredibleIncubationPeriod = 28
+latestdata2 = latestdata2 %>% filter(travel.to+shortestCredibleIncubationPeriod <= date_onset_symptoms  & travel.to+longestCredibleIncubationPeriod >= date_onset_symptoms)
+
 
 #devtools::load_all("~/Git/uk-covid-datatools/")
 bopFit = cache$getSaved("BOP-FIT", params = list(latestdata2), orElse = function(...) {
   bopFit = DistributionFit$new(c("gamma","lnorm","weibull"))
   bopFit$models$weibull$lower$shape = 1
   bopFit$models$weibull$start$shape = 1.1
-  bopFit$models$gamma$lower$shape = 1
+  #bopFit$models$gamma$lower$shape = 1
   bopFit$models$gamma$start$shape = 1.1
   # bopFit$models$gamma$support = c(0.01,Inf)
   # bopFit$models$weibull$support = c(0.01,Inf)
@@ -252,7 +256,7 @@ incubFF100Fit = cache$getSaved("INCUB-FIT", params=list(ff100), orElse = functio
   incubFF100Fit = DistributionFit$new(distributions = c("gamma","lnorm","weibull"))
   incubFF100Fit$models$weibull$lower$shape = 1
   incubFF100Fit$models$weibull$start$shape = 1.1
-  incubFF100Fit$models$gamma$lower$shape = 1
+  #incubFF100Fit$models$gamma$lower$shape = 1
   incubFF100Fit$models$gamma$start$shape = 1.1
   incubFF100Fit$fromCensoredData(censIncub,lowerValueExpr = left,upperValueExpr = right,truncate = TRUE, bootstraps = 200)
   return(incubFF100Fit)
@@ -270,9 +274,14 @@ incubDist = cache$getSaved("INCUBATION-PERIOD-ERROR-SIMULATION", params=bopFit, 
   incubFit$bootstraps = incubFit$bootstraps %>% filter(bootstrapNumber <= 100)
   
   # generate a set of samples from best fitting incubation period distribution
-  # get samples from incubation and split into 2 groups - one for index patient and one for affected patient
+  # this is a parameterised bootstrap step for each incubation period distrbituion.
+  
   incubFit$generateSamples(sampleExpr = 2000,seed = 101)
+  
   incubSamples = incubFit$samples %>%
+    # get samples from incubation and split into 2 groups - one for index patient and one for affected patient
+    # this makes sure that the samples for the error distribution are coming from the same incubation period distribution
+    # there are 1000 samples in each leg.
     mutate(sampleCat = (sampleNumber-1) %/% 1000 + 1, sampleNumber = ((sampleNumber-1) %% 1000)+1) %>%
     pivot_wider(names_from = sampleCat, values_from = value, names_prefix = "incub")
   incubDist = incubSamples %>% mutate(delayOffset = incub2, incubError = incub1-incub2, transition = "infection to onset", from="infection", to = "onset")
@@ -280,10 +289,14 @@ incubDist = cache$getSaved("INCUBATION-PERIOD-ERROR-SIMULATION", params=bopFit, 
   
 })
 
-expt = cache$getSaved("GENERATION-INTERVAL-DATASET", params=list(incubDist,siResample), orElse = function(...) {
+# truncate the generated samples to make sure they have not been 
+longestCredibleIncubationPeriod = 14
+incubDist = incubDist %>% filter(incub1 < longestCredibleIncubationPeriod & incub2 < longestCredibleIncubationPeriod)
+
+expt = cache$getSaved("GENERATION-INTERVAL-DATASET", params=list(incubDist,resamples), orElse = function(...) {
   
-  actualSI = siResample$bootstrapSamples %>% select(bootstrapNumber,value)
-  errorGItoSI = incubDist %>% filter(incub1 < 14 & incub2 < 14)  %>% select(bootstrapNumber, error=incubError) 
+  actualSI = resamples %>% select(bootstrapNumber,value)
+  errorGItoSI = incubDist %>% select(bootstrapNumber, error=incubError) 
   expt = actualSI %>% group_by(bootstrapNumber) %>% nest(actual=value) %>% inner_join(
     errorGItoSI %>% group_by(bootstrapNumber) %>% nest(error=error),
     by="bootstrapNumber")
@@ -294,29 +307,21 @@ expt = cache$getSaved("GENERATION-INTERVAL-DATASET", params=list(incubDist,siRes
 
 ## setup grid search and error miminisation
 
-simSi = function(shape, rate, errors) {
-  N = length(errors)
-  genSim = rgamma(N*100,shape,rate = rate)+rep(errors,100)
-  return(genSim)
+
+
+minimise = function(shape, rate, inc1minusInc2, actuals) {
+  N = length(inc1minusInc2)
+  # for a given shape and rate calculate a ISR based on sampling
+  simulated = rgamma(N*100,shape,rate = rate)+rep(inc1minusInc2,100)
+  # calculate an error between observed and simulated that will be minimised
+  error = abs(IQR(actuals)-IQR(simulated))
+  return(error)
 }
 
-errorFunction = function(simulated, actuals) {
-  return(
-    #abs(mean(actuals)-mean(simulated))+
-    abs(IQR(actuals)-IQR(simulated))
-  )
-}
-
-minimise = function(shape, rate, errors, actuals) {
-  simulated = simSi(shape,rate,errors)
-  out = errorFunction(simulated, actuals)
-  return(out)
-}
-
-estimateParams = function(errors,actuals) {
+estimateParams = function(inc1minusInc2,actuals,sdStart) {
 
   mu = mean(actuals)
-  search = function(sdLim=c(mu/5,mu), grid = NULL) {
+  search = function(sdLim=sdStart, grid = NULL) {
     #browser()
     sdWidth=(sdLim[2]-sdLim[1])/10
     if(sdWidth<0.00001) return(grid)
@@ -329,7 +334,7 @@ estimateParams = function(errors,actuals) {
           sd = sd,
           shape=shape,
           rate=rate,
-          error=minimise(shape,rate,errors,actuals)
+          error=minimise(shape,rate,inc1minusInc2,actuals)
         )
       )
     }
@@ -348,15 +353,19 @@ estimateParams = function(errors,actuals) {
 
 ## execute grid search
 
-genIntTmp = dpc$getSaved("GENERATION-INTERVAL-OPTIM", params = expt, orElse = function(...) {
+sdStart = c(0.1,10)
+
+genIntTmp = cache$getSaved("GENERATION-INTERVAL-OPTIM", params = list(expt,sdStart), orElse = function(...) {
   genInt = expt %>% group_by(bootstrapNumber) %>% group_modify(function(d,g,...) {
-    actuals=d$actual[[1]]$value
-    errors = d$error[[1]]$error
+    actuals = d$actual[[1]]$value
+    inc1minusInc2 = d$error[[1]]$error
     #initMean = mean(actuals)
     #initSd = sd(actuals)
     message(".",appendLF = FALSE)
     #out = optim(par = c(initMean,initSd), fn = minimise, lower = c(0,0), method = "L-BFGS-B", errors=errors, actuals=actuals)
-    out = estimateParams(errors=errors, actuals=actuals)
+    out = estimateParams(inc1minusInc2, actuals, sdStart)
+    if (nrow(out) > 1) browser()
+    if (out$sd <= sdStart[1] | out$sd >= sdStart[2]) browser()
     #return(tibble(mean = out$par[1],sd = out$par[2], err = out$value))
     return(out)
   })
@@ -381,7 +390,7 @@ tmp %>% write.table(here::here("output/generation-interval-fitted-si-sample.txt"
 
 # export distribution parameters
 siGeneration$dfit$bootstraps %>% pivot_wider(names_from = "param",values_from = "value") %>% 
-  mutate(mean = shape/rate, sd = sqrt(shape/(rate^2))) %>% write_csv(here::here("output/generation-interval-fitted-parameters.csv"))
+  mutate(scale = 1/rate, mean = shape/rate, sd = sqrt(shape/(rate^2))) %>% write_csv(here::here("output/generation-interval-fitted-parameters.csv"))
 
 
 ## Impact of using the serial interval on estimation of *R~t~* ----
@@ -412,7 +421,7 @@ siDates = tibble(
 )
 
 meanlim=c(2,8)
-sdlim=c(1,6)
+sdlim=c(0.5,5.5)
 
 siImpact = cache$getSaved("SERIAL-INTERVAL-IMPACT", params = list(ukts,siDates,meanlim,sdlim), orElse = function(...) {
   # perform the Rt estimate for the various mean sd combinations
@@ -462,7 +471,7 @@ siImpact = cache$getSaved("SERIAL-INTERVAL-IMPACT", params = list(ukts,siDates,m
 siFits = bind_rows(
   siResample$getSummary() %>% mutate(name = "resample"),
   siFF100$getSummary() %>% mutate(name = "ff100"),
-  siMeta$getSummary()%>% mutate(name = "random effects"),
+  # siMeta$getSummary()%>% mutate(name = "random effects"),
   siGeneration$getSummary() %>% mutate(name = "generation")
 )
 
@@ -535,10 +544,15 @@ infectionToObservationDelay = cache$getSaved("INFECTION-OBSERVATION-DELAY-DATA",
   combinedDelay = rawDelay %>% 
     left_join(incubDist, by=c("bootstrapNumber","sampleNumber"), suffix=c("",".incub")) 
   
-  combinedDelay %>% 
+  combinedDelay = combinedDelay %>% 
     mutate(timeDelay = incub2+delay2) %>% ungroup() %>%
-    select(transition,timeDelay,bootstrapNumber,sampleNumber) %>% return()
+    select(transition,timeDelay,bootstrapNumber,sampleNumber) 
+  
+  combinedDelay %>% return()
 })
+
+# because the delay from symptoms to test is sometimes quite significantly negative we can still get negative numbers in here
+infectionToObservationDelay = infectionToObservationDelay %>% filter(timeDelay > 0)
 
 infectionToObservationFit = cache$getSaved("INFECTION-OBSERVATION-DELAY-FIT", params=infectionToObservationDelay, orElse = function(...) {
   fit = DistributionFit$new(distributions = c("lnorm","gamma","weibull"))
